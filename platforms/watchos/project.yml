@@ -1,0 +1,33 @@
+name: PodJSWatchApp
+options:
+  bundleIdPrefix: com.wilflin.podjs
+  deploymentTarget:
+    watchOS: "11.0"
+packages:
+  PodJSWatch:
+    path: .
+targets:
+  PodJSWatchApp:
+    type: application
+    platform: watchOS
+    deploymentTarget: "11.0"
+    sources:
+      - path: App
+      - path: ../../dist/watchos-watch
+        buildPhase: resources
+    dependencies:
+      - package: PodJSWatch
+        product: PodJSWatch
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        CURRENT_PROJECT_VERSION: 1
+        DEVELOPMENT_TEAM: 9887KU7FN7
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: PodJS
+        INFOPLIST_KEY_WKWatchOnly: YES
+        MARKETING_VERSION: 0.1.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.wilflin.podjs.watchgallery
+        SWIFT_VERSION: 6.0
+    scheme:
+      gatherCoverageData: false

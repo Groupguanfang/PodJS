@@ -7,7 +7,7 @@ acceptance gates have passed.
 | --- | --- | --- |
 | Feasibility / Android | OWW242 API 30 real device loads the signed bundle, starts QuickJS, emits a 6,464-word DrawList and presents Vulkan rectangles | font/texture/triangle rendering |
 | Feasibility / Wear OS | ARMv7/ARM64 APK builds with the shared Vulkan AAR and rotary adapter | emulator launch/input run |
-| Feasibility / watchOS | Xcode 26.6 on an Apple Silicon Mac cross-builds Rust/QuickJS for watchOS device and simulator, packages both slices as an XCFramework, compiles the Swift/SpriteKit host, links the runtime and passes two parser tests on a watchOS 26.5 Apple Watch SE simulator | embed a runnable gallery app, validate input/rendering, and run on Apple Watch hardware |
+| Feasibility / watchOS | Xcode 26.6/27 on an Apple Silicon Mac cross-builds Rust/QuickJS for watchOS device and simulator, packages both slices as an XCFramework, passes two parser tests on an Apple Watch simulator, and signs and installs the bundled runtime app on a Series 9 running watchOS 27 | confirm physical launch/runtime status, then validate SpriteKit rendering and input |
 | Feasibility / HarmonyOS | DevEco 26 on Windows cross-builds ARM64 Rust/QuickJS; the compiled N-API host validates and evaluates embedded assets, owns the XComponent NativeWindow lifecycle, accepts touch/frame callbacks and emits an unsigned HAP | configure signing, build with the HarmonyOS 6.1 wearable SDK and run on WATCH 5 |
 | Runtime Alpha | C ABI, package preflight, 240x240 metrics, frame-boundary events and deterministic hash snapshots have native tests | four-host tape parity |
 | Renderer Alpha | Android Vulkan swapchain/RECT is live; the DevEco-compiled Harmony EGL/GLES3 path clears, scales RECT commands and swaps the XComponent surface | run GLES on WATCH 5; full DrawList on Vulkan/GLES/SpriteKit and screenshot goldens |
@@ -27,6 +27,12 @@ An install attempt on that emulator was rejected with bundle-manager code
 
 The current watchOS proof used Xcode 26.6, watchOS SDK/runtime 26.5 and the
 Apple Watch SE (3rd generation, 40 mm) arm64 simulator. The device archive
-contains both watchOS 11-compatible `arm64_32` and newer `arm64` slices, but it
-has not been signed, embedded, installed or exercised on physical Apple Watch
-hardware.
+contains both watchOS 11-compatible `arm64_32` and newer `arm64` slices. The
+separate physical-device evidence is recorded below.
+
+The first signed physical install used Xcode 27 beta and an Apple Watch Series 9
+running watchOS 27. The device was registered to the configured development
+team, the signed `com.wilflin.podjs.watchgallery` bundle was installed, and the
+device app inventory reported PodJS 0.1.0 (1). CoreDevice's programmatic launch
+request timed out, so install evidence must not be treated as physical launch or
+rendering acceptance yet.

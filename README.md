@@ -35,7 +35,8 @@ Android packaging emits an ARMv7/ARM64 debug APK, release AAB and reusable
 AAR. Wear OS uses the same runtime/AAR with a separate manifest and rotary
 shell. watchOS packaging is run on the configured Xcode 16+ Mac; use
 `scripts/build-watchos-runtime.sh` to build the device/simulator XCFramework
-and its Swift Package release archive. On a Windows
+and its Swift Package release archive. The checked-in `PodJSWatchApp.xcodeproj`
+produces the standalone, Watch-only application bundle. On a Windows
 DevEco host, `pod package --target=harmonyos-watch` uses the checked-in
 PowerShell script to cross-build Rust/QuickJS, embed the bundle assets and emit
 an unsigned HAP.

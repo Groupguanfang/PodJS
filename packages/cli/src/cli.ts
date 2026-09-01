@@ -107,7 +107,11 @@ function packageTarget(target: Target): void {
     run(["./gradlew", `${app}:assembleDebug`, `${app}:bundleRelease`, ":runtime:assembleRelease"], join(ROOT, "platforms/android"));
   } else if (target === "watchos-watch") {
     if (!capture(["xcodebuild", "-version"])) fail("watchOS packaging must run on the configured Mac");
-    run(["swift", "build", "--package-path", "platforms/watchos"]);
+    run([
+      "xcodebuild", "-project", "platforms/watchos/PodJSWatchApp.xcodeproj",
+      "-scheme", "PodJSWatchApp", "-destination", "generic/platform=watchOS",
+      "-derivedDataPath", ".pod/watchos", "CODE_SIGNING_ALLOWED=NO", "build",
+    ]);
   } else {
     if (process.platform !== "win32") fail("HarmonyOS packaging must run on the configured Windows DevEco host");
     run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-harmony-runtime.ps1"]);
