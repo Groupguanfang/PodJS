@@ -1,3 +1,3 @@
 export interface Preflight { ok: boolean; error?: string }
 export const preflight: (target: string, abi: number) => Preflight;
-export const boot: (xcomponentId: string) => boolean;
+export const boot: (js: Uint8Array, pak: Uint8Array, manifest: Uint8Array) => boolean;
