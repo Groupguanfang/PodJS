@@ -33,7 +33,9 @@ bun run pod package --target=android-watch
 
 Android packaging emits an ARMv7/ARM64 debug APK, release AAB and reusable
 AAR. Wear OS uses the same runtime/AAR with a separate manifest and rotary
-shell. watchOS packaging is run on the configured Xcode 16+ Mac. On a Windows
+shell. watchOS packaging is run on the configured Xcode 16+ Mac; use
+`scripts/build-watchos-runtime.sh` to build the device/simulator XCFramework
+and its Swift Package release archive. On a Windows
 DevEco host, `pod package --target=harmonyos-watch` uses the checked-in
 PowerShell script to cross-build Rust/QuickJS, embed the bundle assets and emit
 an unsigned HAP.
@@ -48,8 +50,9 @@ an unsigned HAP.
   host ABI, capability list, PocketJS revision and bundle/pak hashes are checked.
 - Android/Wear AAR/JNI with dual ARM ABIs, API 30-compatible asset loading,
   lifecycle/surface recovery, haptics/network bridge and Vulkan 1.1 swapchain.
-- watchOS Swift Package/SpriteKit and HarmonyOS Stage/XComponent/N-API/GLES3
-  source trees, ready for their platform-native build hosts.
+- watchOS Swift Package/SpriteKit host validated with a linked Rust/QuickJS
+  XCFramework on an Apple Watch simulator, plus a HarmonyOS
+  Stage/XComponent/N-API/GLES3 source tree validated by its native build host.
 - A 1,000-row Solid component/performance gallery and contract tests.
 
 The Android Vulkan feasibility renderer currently submits RECT and a flat

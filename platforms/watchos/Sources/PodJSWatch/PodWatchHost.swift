@@ -16,7 +16,7 @@ public final class PodWatchHost {
           let caps = "[\"input.touch\",\"input.rotary\",\"data.kv\",\"device.haptics\",\"host.lifecycle\",\"host.theme\",\"display.round\",\"net.http\",\"data.fs\"]"
           return caps.withCString { capabilities in
             var c = PodRuntimeConfig(struct_size: UInt32(MemoryLayout<PodRuntimeConfig>.size), target_id: target,
-              host_abi: PODJS_RUNTIME_ABI_VERSION, raster_density: 2, physical_width: 416, physical_height: 496,
+              host_abi: UInt32(PODJS_RUNTIME_ABI_VERSION), raster_density: 2, physical_width: 416, physical_height: 496,
               display_density: 2, display_shape: UInt32(POD_DISPLAY_ROUND.rawValue), safe_top: 0, safe_right: 0, safe_bottom: 0, safe_left: 0, data_dir: path, capabilities_json: capabilities)
             return pod_runtime_create(&c)
           }
