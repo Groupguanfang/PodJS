@@ -1,0 +1,14 @@
+{
+  "name": "@podjs/framework",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./watch": "./src/watch.ts",
+    "./targets": "./src/targets.ts"
+  },
+  "dependencies": {
+    "@pocketjs/framework": "file:../../vendor/pocketjs",
+    "solid-js": "^1.9.9"
+  }
+}

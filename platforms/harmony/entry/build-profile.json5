@@ -1,0 +1,1 @@
+{ apiType: 'stageMode', buildOption: { externalNativeOptions: { path: './src/main/cpp/CMakeLists.txt', arguments: '-DOHOS_STL=c++_shared', cppFlags: '-std=c++20' } }, targets: [{ name: 'default' }] }

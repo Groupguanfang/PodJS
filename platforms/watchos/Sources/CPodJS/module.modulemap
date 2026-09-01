@@ -1,0 +1,5 @@
+module CPodJS [system] {
+  header "podjs_runtime.h"
+  link "podjs_runtime"
+  export *
+}

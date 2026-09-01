@@ -1,0 +1,11 @@
+{
+  "name": "@podjs/gallery",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@podjs/framework": "workspace:*",
+    "@pocketjs/framework": "file:../../vendor/pocketjs",
+    "solid-js": "^1.9.9"
+  }
+}

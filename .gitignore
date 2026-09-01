@@ -1,0 +1,12 @@
+/target/
+**/node_modules/
+/dist/
+/.pod/
+**/.gradle/
+/.idea/
+**/build/
+**/.cxx/
+**/.hvigor/
+**/oh_modules/
+**/prebuilt/
+*.local.properties

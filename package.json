@@ -1,0 +1,20 @@
+{
+  "name": "podjs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "pod": "bun packages/cli/src/cli.ts",
+    "build": "bun packages/cli/src/cli.ts build",
+    "test": "bun test packages/framework/tests/watch.test.ts tests/targets.test.ts && cargo test --workspace",
+    "doctor": "bun packages/cli/src/cli.ts doctor"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.2"
+  }
+}
