@@ -104,6 +104,10 @@ int32_t pod_runtime_set_theme(PodRuntime *runtime, const char *theme);
 int32_t pod_runtime_post_event(PodRuntime *runtime, const char *json_object);
 int32_t pod_runtime_frame(PodRuntime *runtime, const PodInputFrame *input);
 int32_t pod_runtime_snapshot(PodRuntime *runtime, PodDrawList *out);
+/* Rasterize the current DrawList to tightly packed RGBA8. `scale` is 1..4;
+ * length must equal 240 * scale * 240 * scale * 4. */
+int32_t pod_runtime_render_rgba(PodRuntime *runtime, uint32_t scale,
+                                uint8_t *pixels, size_t length);
 int32_t pod_runtime_texture(PodRuntime *runtime, uint32_t slot, PodTextureView *out);
 int32_t pod_runtime_font(PodRuntime *runtime, uint32_t slot, PodFontView *out);
 

@@ -73,6 +73,8 @@ function build(target: Target, app = "apps/gallery/src/main.tsx"): void {
   run([
     "bun", "vendor/pocketjs/tools/build.ts", resolve(ROOT, app),
     "--framework=solid", `--density=${density}`, "--hz=60",
+    `--font-regular=${join(ROOT, "assets/fonts/NotoSansCJKSC-Regular-subset.ttf")}`,
+    `--font-bold=${join(ROOT, "assets/fonts/NotoSansCJKSC-Bold-subset.ttf")}`,
     `--outdir=${out}`, `--project-root=${ROOT}`,
   ]);
   const output = basename(app).replace(/\.tsx?$/, "");

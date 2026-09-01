@@ -8,6 +8,7 @@ public final class PodWatchHost {
     public let scene = PodScene(size: CGSize(width: 240, height: 240))
     private var runtime: OpaquePointer?
     private var crownRemainder: Double = 0
+    private static let renderScale: UInt32 = 2
 
     public init(bundle: Bundle = .main) throws {
         guard pod_runtime_abi_version() == PODJS_RUNTIME_ABI_VERSION else { throw HostError.abi }
@@ -27,10 +28,46 @@ public final class PodWatchHost {
         try checked(pb.withUnsafeBytes { pod_runtime_load_pak(runtime, $0.bindMemory(to: UInt8.self).baseAddress, $0.count) })
         try checked(mb.withCString { pod_runtime_validate_package(runtime, $0) })
         try checked(jb.withUnsafeBytes { ptr in "app:///main.js".withCString { pod_runtime_eval_bundle(runtime, ptr.bindMemory(to: UInt8.self).baseAddress, ptr.count, $0) } })
+        scene.scaleMode = .aspectFit
+        scene.backgroundColor = .black
     }
     deinit { if let runtime { pod_runtime_destroy(runtime) } }
     public func addCrownDegrees(_ degrees: Double) { crownRemainder += degrees * 1000 }
     public func setLifecycle(_ state: UInt32) throws { try checked(pod_runtime_set_lifecycle(runtime, state)) }
+    /// Advance one deterministic guest turn. A SpriteKit texture is submitted
+    /// only when the canonical DrawList/resource hash changes.
+    public func frame() throws {
+        var input = PodInputFrame(
+            struct_size: UInt32(MemoryLayout<PodInputFrame>.size),
+            buttons: 0,
+            analog: 0x80808080,
+            touches: nil,
+            touch_count: 0,
+            rotary_primary_millidegrees: Int32(crownRemainder.rounded(.towardZero)),
+            rotary_secondary_millidegrees: 0
+        )
+        crownRemainder -= Double(input.rotary_primary_millidegrees)
+        let frameResult = pod_runtime_frame(runtime, &input)
+        if frameResult == 1 { return }
+        try checked(frameResult)
+
+        var snapshot = PodDrawList()
+        try checked(pod_runtime_snapshot(runtime, &snapshot))
+        guard snapshot.changed != 0 else { return }
+
+        let scale = Self.renderScale
+        let side = Int(PODJS_LOGICAL_WIDTH) * Int(scale)
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            try checked(pod_runtime_render_rgba(runtime, scale, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count))
+        }
+        try scene.commit(
+            rgba: pixels,
+            pixelWidth: side,
+            pixelHeight: side,
+            generation: snapshot.content_hash
+        )
+    }
     private func checked(_ code: Int32) throws { if code < 0 { throw HostError.runtime(String(cString: pod_runtime_last_error())) } }
     public enum HostError: Error { case abi, assets, runtime(String) }
 }

@@ -1,10 +1,42 @@
 #if os(watchOS)
 import SpriteKit
+import CoreGraphics
 
 /// SpriteKit backend. Unsupported DrawList operations are surfaced as errors;
 /// production packaging runs the same parser and refuses an incompatible app.
 public final class PodScene: SKScene {
     private var generation: UInt64 = 0
+    public func commit(
+        rgba: [UInt8],
+        pixelWidth: Int,
+        pixelHeight: Int,
+        generation next: UInt64
+    ) throws {
+        guard next != generation else { return }
+        guard rgba.count == pixelWidth * pixelHeight * 4,
+              let provider = CGDataProvider(data: Data(rgba) as CFData),
+              let image = CGImage(
+                width: pixelWidth,
+                height: pixelHeight,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: pixelWidth * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+              ) else { throw PodDrawError.invalidRGBAFrame }
+        let sprite = SKSpriteNode(texture: SKTexture(cgImage: image))
+        sprite.anchorPoint = CGPoint(x: 0, y: 0)
+        sprite.position = .zero
+        sprite.size = size
+        removeAllChildren()
+        addChild(sprite)
+        generation = next
+    }
+
     public func commit(words: [UInt32], generation next: UInt64) throws {
         guard next != generation else { return }
         let commands = try PodDrawListParser.parse(words)

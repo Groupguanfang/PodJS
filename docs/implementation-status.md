@@ -7,10 +7,10 @@ acceptance gates have passed.
 | --- | --- | --- |
 | Feasibility / Android | OWW242 API 30 real device loads the signed bundle, starts QuickJS, emits a 6,464-word DrawList and presents Vulkan rectangles | font/texture/triangle rendering |
 | Feasibility / Wear OS | ARMv7/ARM64 APK builds with the shared Vulkan AAR and rotary adapter | emulator launch/input run |
-| Feasibility / watchOS | Xcode 26.6/27 on an Apple Silicon Mac cross-builds Rust/QuickJS for watchOS device and simulator, packages both slices as an XCFramework, passes two parser tests on an Apple Watch simulator, and signs and installs the bundled runtime app on a Series 9 running watchOS 27 | confirm physical launch/runtime status, then validate SpriteKit rendering and input |
+| Feasibility / watchOS | Xcode 27 on an Apple Silicon Mac cross-builds Rust/QuickJS, packages device/simulator slices as an XCFramework, passes three SpriteKit/parser tests on an Apple Watch simulator, and launches a signed Hero build on a Series 9 running watchOS 27 | touch and Digital Crown input run |
 | Feasibility / HarmonyOS | DevEco 26 on Windows cross-builds ARM64 Rust/QuickJS; the compiled N-API host validates and evaluates embedded assets, owns the XComponent NativeWindow lifecycle, accepts touch/frame callbacks and emits an unsigned HAP | configure signing, build with the HarmonyOS 6.1 wearable SDK and run on WATCH 5 |
 | Runtime Alpha | C ABI, package preflight, 240x240 metrics, frame-boundary events and deterministic hash snapshots have native tests | four-host tape parity |
-| Renderer Alpha | Android Vulkan swapchain/RECT is live; the DevEco-compiled Harmony EGL/GLES3 path clears, scales RECT commands and swaps the XComponent surface | run GLES on WATCH 5; full DrawList on Vulkan/GLES/SpriteKit and screenshot goldens |
+| Renderer Alpha | Android Vulkan swapchain/RECT is live; the DevEco-compiled Harmony EGL/GLES3 path clears, scales RECT commands and swaps the XComponent surface; watchOS renders the canonical DrawList to a density-2 RGBA texture and submits it through SpriteKit only when its content hash changes | run GLES on WATCH 5; full DrawList on Vulkan/GLES and establish screenshot goldens |
 | Framework Beta | Solid API, capabilities, rotary, lifecycle/theme, KV, haptics and Android HTTP bridge exist | four-host error recovery and storage/network integration tests |
 | v1 | not reached | device matrix, 60-second frame gate and 10-minute stability/power baseline |
 
@@ -30,9 +30,11 @@ Apple Watch SE (3rd generation, 40 mm) arm64 simulator. The device archive
 contains both watchOS 11-compatible `arm64_32` and newer `arm64` slices. The
 separate physical-device evidence is recorded below.
 
-The first signed physical install used Xcode 27 beta and an Apple Watch Series 9
-running watchOS 27. The device was registered to the configured development
-team, the signed `com.wilflin.podjs.watchgallery` bundle was installed, and the
-device app inventory reported PodJS 0.1.0 (1). CoreDevice's programmatic launch
-request timed out, so install evidence must not be treated as physical launch or
-rendering acceptance yet.
+The latest signed physical run used Xcode 27 beta and an Apple Watch Series 9
+running watchOS 27. CoreDevice installed and launched
+`com.wilflin.podjs.watchgallery` 0.1.0 (7), the guest reported `runtime ready`,
+and a CoreDevice screenshot confirmed the 1,000-row Hero/gallery UI, density-2
+baked Chinese glyphs, rounded geometry, colors and clipping on the physical
+display ([captured evidence](evidence/watchos-series9-hero.png)). This proves
+startup and the static first frame; touch, Digital Crown,
+60-second frame pacing and 10-minute stability are still separate gates.

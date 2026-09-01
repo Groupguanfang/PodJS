@@ -50,4 +50,15 @@ describe("watch API", () => {
     expect(api.kv.keys()).toEqual(["counter"]);
     expect(api.kv.delete("counter")).toBeTrue();
   });
+
+  test("validates UTF-8 KV key length without browser encoding globals", () => {
+    const encoder = globalThis.TextEncoder;
+    try {
+      Object.defineProperty(globalThis, "TextEncoder", { value: undefined, configurable: true });
+      expect(() => api.kv.set("😀".repeat(32), 1)).not.toThrow();
+      expect(() => api.kv.set("中".repeat(43), 1)).toThrow("1..128 UTF-8 bytes");
+    } finally {
+      Object.defineProperty(globalThis, "TextEncoder", { value: encoder, configurable: true });
+    }
+  });
 });

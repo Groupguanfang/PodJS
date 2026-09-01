@@ -779,6 +779,47 @@ pub extern "C" fn pod_runtime_snapshot(runtime: *mut PodRuntime, out: *mut PodDr
     OK
 }
 
+/// Render the most recently snapshotted DrawList into an RGBA8 framebuffer.
+///
+/// SpriteKit hosts use this to submit one immutable texture instead of
+/// materializing thousands of nodes for PocketJS rounded geometry. Rendering
+/// is still performed from the canonical DrawList and the same font/texture
+/// resources used by every other backend.
+#[unsafe(no_mangle)]
+pub extern "C" fn pod_runtime_render_rgba(
+    runtime: *mut PodRuntime,
+    scale: u32,
+    pixels: *mut u8,
+    length: usize,
+) -> i32 {
+    let Ok(runtime) = runtime_mut(runtime) else {
+        return ERR_ARGUMENT;
+    };
+    if !runtime.mounted || pixels.is_null() || !(1..=4).contains(&scale) {
+        return ERR_ARGUMENT;
+    }
+    let Some(width) = LOGICAL_WIDTH.checked_mul(scale) else {
+        return ERR_ARGUMENT;
+    };
+    let Some(height) = LOGICAL_HEIGHT.checked_mul(scale) else {
+        return ERR_ARGUMENT;
+    };
+    let Some(expected) = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|value| value.checked_mul(4))
+    else {
+        return ERR_ARGUMENT;
+    };
+    if length != expected {
+        return ERR_ARGUMENT;
+    }
+    let framebuffer = unsafe { slice::from_raw_parts_mut(pixels, length) };
+    runtime.surface.with_ui(|ui| {
+        pocketjs_core::raster::render_scaled(ui, &runtime.draw_words, framebuffer, scale)
+    });
+    OK
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn pod_runtime_texture(
     runtime: *mut PodRuntime,
@@ -1012,14 +1053,24 @@ mod tests {
         let caps = CString::new("[]").unwrap();
         let runtime = pod_runtime_create(&valid_config(&target, &caps));
         assert_eq!(pod_runtime_load_pak(runtime, b"pak".as_ptr(), 3), OK);
-        let manifest = CString::new(json!({
-            "target": "wearos-watch", "hostAbi": 1,
-            "pocketjsRevision": "0a90bf904d835210e52a11ed275a86d0040b5086",
-            "pakHash": format!("{:016x}", hash_bytes(b"pak")),
-            "bundleHash": format!("{:016x}", hash_bytes(b"js")), "capabilities": [],
-        }).to_string()).unwrap();
-        assert_eq!(pod_runtime_validate_package(runtime, manifest.as_ptr()), ERR_STATE);
-        assert_eq!(pod_runtime_eval_bundle(runtime, b"js".as_ptr(), 2, std::ptr::null()), ERR_STATE);
+        let manifest = CString::new(
+            json!({
+                "target": "wearos-watch", "hostAbi": 1,
+                "pocketjsRevision": "0a90bf904d835210e52a11ed275a86d0040b5086",
+                "pakHash": format!("{:016x}", hash_bytes(b"pak")),
+                "bundleHash": format!("{:016x}", hash_bytes(b"js")), "capabilities": [],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            pod_runtime_validate_package(runtime, manifest.as_ptr()),
+            ERR_STATE
+        );
+        assert_eq!(
+            pod_runtime_eval_bundle(runtime, b"js".as_ptr(), 2, std::ptr::null()),
+            ERR_STATE
+        );
         pod_runtime_destroy(runtime);
     }
 
@@ -1080,6 +1131,20 @@ mod tests {
         };
         assert_eq!(pod_runtime_snapshot(runtime, &mut snapshot), 0);
         assert_eq!(snapshot.frame_number, 1);
+        let mut rgba = vec![0u8; (LOGICAL_WIDTH * LOGICAL_HEIGHT * 4) as usize];
+        assert_eq!(
+            pod_runtime_render_rgba(runtime, 1, rgba.as_mut_ptr(), rgba.len()),
+            OK
+        );
+        assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        assert_eq!(
+            pod_runtime_render_rgba(runtime, 0, rgba.as_mut_ptr(), rgba.len()),
+            ERR_ARGUMENT
+        );
+        assert_eq!(
+            pod_runtime_render_rgba(runtime, 1, rgba.as_mut_ptr(), rgba.len() - 1),
+            ERR_ARGUMENT
+        );
         pod_runtime_destroy(runtime);
     }
 }

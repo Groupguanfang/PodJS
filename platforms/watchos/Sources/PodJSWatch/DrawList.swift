@@ -41,4 +41,4 @@ public enum PodDrawListParser {
     }
 }
 
-public enum PodDrawError: Error, Equatable { case truncated; case unknownOpcode(UInt32); case spriteKitUnsupported(UInt32) }
+public enum PodDrawError: Error, Equatable { case truncated; case unknownOpcode(UInt32); case spriteKitUnsupported(UInt32); case invalidRGBAFrame }

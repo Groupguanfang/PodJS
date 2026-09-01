@@ -9,6 +9,7 @@
 **/.hvigor/
 **/oh_modules/
 **/prebuilt/
+/platforms/watchos/Artifacts/
 platforms/harmony/entry/src/main/resources/rawfile/main.js
 platforms/harmony/entry/src/main/resources/rawfile/main.pak
 platforms/harmony/entry/src/main/resources/rawfile/pod.manifest.json

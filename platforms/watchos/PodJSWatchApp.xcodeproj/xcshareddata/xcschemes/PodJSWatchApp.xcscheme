@@ -39,6 +39,17 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0D27CCA31970ADAE8262DA01"
+               BuildableName = "PodJSWatchTests.xctest"
+               BlueprintName = "PodJSWatchTests"
+               ReferencedContainer = "container:PodJSWatchApp.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

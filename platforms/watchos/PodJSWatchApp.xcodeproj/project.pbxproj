@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		050E7454C25A9EDBE97DA24F /* PodJSWatch in Frameworks */ = {isa = PBXBuildFile; productRef = 1C9986714F164781613490A2 /* PodJSWatch */; };
 		1A2711399E862BC529E1CA2E /* main.pak in Resources */ = {isa = PBXBuildFile; fileRef = 4C52F3BFA53DB99801F21F34 /* main.pak */; };
+		3E6E1FC584CE969F4D86E784 /* DrawListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D8426EEE137778042E9BC4 /* DrawListTests.swift */; };
+		945C194B38518FAFA9E7353D /* PodJSWatch in Frameworks */ = {isa = PBXBuildFile; productRef = E820AE4AC376FD4B5C64F6A7 /* PodJSWatch */; };
 		9FFA74890185CDD2FDC177FF /* main.js in Resources */ = {isa = PBXBuildFile; fileRef = D196C9FC3C8056F0F32D0D0C /* main.js */; };
 		DB1812D0712EE7F7A2C44983 /* PodJSWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C906639F2623E862CA732C81 /* PodJSWatchApp.swift */; };
 		E5E5110519217DC7ABD9E730 /* pod.manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = DC65D96CA652D25785D1245F /* pod.manifest.json */; };
@@ -18,12 +20,22 @@
 		1DFAD3279A070ACC3019F4F7 /* watchos */ = {isa = PBXFileReference; lastKnownFileType = folder; name = watchos; path = .; sourceTree = SOURCE_ROOT; };
 		4C52F3BFA53DB99801F21F34 /* main.pak */ = {isa = PBXFileReference; path = main.pak; sourceTree = "<group>"; };
 		5579625E0F19AA6EA0814A84 /* PodJSWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PodJSWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7174A30B7E42A97D03D8064A /* PodJSWatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PodJSWatchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0D8426EEE137778042E9BC4 /* DrawListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawListTests.swift; sourceTree = "<group>"; };
 		C906639F2623E862CA732C81 /* PodJSWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodJSWatchApp.swift; sourceTree = "<group>"; };
 		D196C9FC3C8056F0F32D0D0C /* main.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = main.js; sourceTree = "<group>"; };
 		DC65D96CA652D25785D1245F /* pod.manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = pod.manifest.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A9C96E037FAB24E62F3456D5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				945C194B38518FAFA9E7353D /* PodJSWatch in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B1120207FD35B233F0083D2B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -41,6 +53,15 @@
 				C906639F2623E862CA732C81 /* PodJSWatchApp.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		71CC51C3D0A24E38F90DFE1F /* PodJSWatchTests */ = {
+			isa = PBXGroup;
+			children = (
+				B0D8426EEE137778042E9BC4 /* DrawListTests.swift */,
+			);
+			name = PodJSWatchTests;
+			path = Tests/PodJSWatchTests;
 			sourceTree = "<group>";
 		};
 		82E7F38D7E390AF43C7FF59F /* watchos-watch */ = {
@@ -66,6 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				5579625E0F19AA6EA0814A84 /* PodJSWatchApp.app */,
+				7174A30B7E42A97D03D8064A /* PodJSWatchTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -75,6 +97,7 @@
 			children = (
 				0548CDC0D68B3147625A434C /* App */,
 				971B809C0EAE71317E011859 /* Packages */,
+				71CC51C3D0A24E38F90DFE1F /* PodJSWatchTests */,
 				82E7F38D7E390AF43C7FF59F /* watchos-watch */,
 				D2E6C415A012B968CFE762AF /* Products */,
 			);
@@ -83,6 +106,25 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0D27CCA31970ADAE8262DA01 /* PodJSWatchTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 32756F1983559129ED6B6AAE /* Build configuration list for PBXNativeTarget "PodJSWatchTests" */;
+			buildPhases = (
+				9B8380658D36653061B2DB51 /* Sources */,
+				A9C96E037FAB24E62F3456D5 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PodJSWatchTests;
+			packageProductDependencies = (
+				E820AE4AC376FD4B5C64F6A7 /* PodJSWatch */,
+			);
+			productName = PodJSWatchTests;
+			productReference = 7174A30B7E42A97D03D8064A /* PodJSWatchTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		FEF6CD9A41E3A562A958D1FE /* PodJSWatchApp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 26BB049EA52EC1556DFA4126 /* Build configuration list for PBXNativeTarget "PodJSWatchApp" */;
@@ -136,6 +178,7 @@
 			projectRoot = "";
 			targets = (
 				FEF6CD9A41E3A562A958D1FE /* PodJSWatchApp */,
+				0D27CCA31970ADAE8262DA01 /* PodJSWatchTests */,
 			);
 		};
 /* End PBXProject section */
@@ -154,6 +197,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		9B8380658D36653061B2DB51 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3E6E1FC584CE969F4D86E784 /* DrawListTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C2826E7D0B83B0DBA1995A6C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -221,12 +272,31 @@
 			};
 			name = Release;
 		};
+		3418CC282894BEB7F011FF87 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.wilflin.podjs.watchgallery.tests;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
 		5FC55720DCD976B105FCBEAE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 9887KU7FN7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PodJS;
@@ -304,12 +374,31 @@
 			};
 			name = Debug;
 		};
+		8B34059495F2FD712A24C6DA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.wilflin.podjs.watchgallery.tests;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
 		C316289FD3F92C45DFEC4272 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 9887KU7FN7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PodJS;
@@ -345,6 +434,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		32756F1983559129ED6B6AAE /* Build configuration list for PBXNativeTarget "PodJSWatchTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B34059495F2FD712A24C6DA /* Debug */,
+				3418CC282894BEB7F011FF87 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -356,6 +454,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		1C9986714F164781613490A2 /* PodJSWatch */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PodJSWatch;
+		};
+		E820AE4AC376FD4B5C64F6A7 /* PodJSWatch */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PodJSWatch;
 		};
