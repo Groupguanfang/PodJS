@@ -109,8 +109,8 @@ function packageTarget(target: Target): void {
     if (!capture(["xcodebuild", "-version"])) fail("watchOS packaging must run on the configured Mac");
     run(["swift", "build", "--package-path", "platforms/watchos"]);
   } else {
-    if (!capture(["hdc", "version"])) fail("HarmonyOS packaging must run on the configured DevEco host");
-    console.log("pod: run hvigorw assembleHap in platforms/harmony on the DevEco host");
+    if (process.platform !== "win32") fail("HarmonyOS packaging must run on the configured Windows DevEco host");
+    run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-harmony-runtime.ps1"]);
   }
 }
 

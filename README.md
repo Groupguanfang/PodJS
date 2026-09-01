@@ -33,8 +33,10 @@ bun run pod package --target=android-watch
 
 Android packaging emits an ARMv7/ARM64 debug APK, release AAB and reusable
 AAR. Wear OS uses the same runtime/AAR with a separate manifest and rotary
-shell. watchOS packaging is run on the configured Xcode 16+ Mac; HarmonyOS
-packaging is run with DevEco/hvigor on the HarmonyOS 6.1 host.
+shell. watchOS packaging is run on the configured Xcode 16+ Mac. On a Windows
+DevEco host, `pod package --target=harmonyos-watch` uses the checked-in
+PowerShell script to cross-build Rust/QuickJS, embed the bundle assets and emit
+an unsigned HAP.
 
 ## Implemented baseline
 

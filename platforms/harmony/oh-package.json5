@@ -1,1 +1,1 @@
-{ modelVersion: '5.0.0', description: 'PodJS HarmonyOS watch host', dependencies: {}, devDependencies: { '@ohos/hvigor-ohos-plugin': '5.0.0' } }
+{ modelVersion: '5.0.0', description: 'PodJS HarmonyOS watch host', dependencies: {}, devDependencies: {} }
