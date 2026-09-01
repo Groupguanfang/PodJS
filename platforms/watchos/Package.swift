@@ -8,8 +8,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "PodJSRuntime",
-            url: "https://github.com/gfhdhytghd/PodJS/releases/download/v0.1.0-alpha.1/PodJSRuntime-watchOS.xcframework.zip",
-            checksum: "61b159a4808f9eb066c335879b23a70dfc09e734cdc9a6a3047c27afdf4395ee"
+            url: "https://github.com/gfhdhytghd/PodJS/releases/download/v0.1.0-alpha.2/PodJSRuntime-watchOS.xcframework.zip",
+            checksum: "30be5a476866c2673b3d280c89a313498148a1cd062e702ebb076075e7f33957"
         ),
         .systemLibrary(name: "CPodJS", path: "Sources/CPodJS"),
         .target(

@@ -26,6 +26,7 @@ An install attempt on that emulator was rejected with bundle-manager code
 `9568320` (`no signature file`); no unsigned-install bypass was applied.
 
 The current watchOS proof used Xcode 26.6, watchOS SDK/runtime 26.5 and the
-Apple Watch SE (3rd generation, 40 mm) arm64 simulator. Both
-`aarch64-apple-watchos` Rust slices compile, but the device archive has not been
-signed, embedded, installed or exercised on physical Apple Watch hardware.
+Apple Watch SE (3rd generation, 40 mm) arm64 simulator. The device archive
+contains both watchOS 11-compatible `arm64_32` and newer `arm64` slices, but it
+has not been signed, embedded, installed or exercised on physical Apple Watch
+hardware.
