@@ -14,12 +14,44 @@ struct PodJSWatchGalleryApp: App {
 private struct PodJSWatchRootView: View {
     @State private var host: PodWatchHost?
     @State private var status = "Starting PodJS…"
+    @State private var crownValue = 0.0
+    @FocusState private var crownFocused: Bool
 
     var body: some View {
         Group {
             if let host {
-                SpriteView(scene: host.scene, preferredFramesPerSecond: 60)
-                    .ignoresSafeArea()
+                GeometryReader { geometry in
+                    SpriteView(scene: host.scene, preferredFramesPerSecond: 60)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                                .onChanged { value in
+                                    host.updatePrimaryTouch(
+                                        location: value.location,
+                                        in: geometry.size
+                                    )
+                                }
+                                .onEnded { _ in host.clearTouches() }
+                        )
+                }
+                .ignoresSafeArea()
+                .focusable()
+                .focused($crownFocused)
+                .digitalCrownRotation(
+                    $crownValue,
+                    from: -100_000,
+                    through: 100_000,
+                    by: 1,
+                    sensitivity: .high,
+                    isContinuous: true,
+                    isHapticFeedbackEnabled: false
+                )
+                .onChange(of: crownValue) { oldValue, newValue in
+                    // One SwiftUI detent selects one gallery row. The public
+                    // PodJS contract remains physical integer millidegrees.
+                    host.addCrownDegrees((newValue - oldValue) * 12)
+                }
+                .onAppear { crownFocused = true }
             } else {
                 VStack(spacing: 8) {
                     Text("PodJS")

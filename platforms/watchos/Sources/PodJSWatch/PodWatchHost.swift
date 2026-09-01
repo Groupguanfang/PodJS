@@ -8,6 +8,7 @@ public final class PodWatchHost {
     public let scene = PodScene(size: CGSize(width: 240, height: 240))
     private var runtime: OpaquePointer?
     private var crownRemainder: Double = 0
+    private var touches: [PodTouch] = []
     private static let renderScale: UInt32 = 2
 
     public init(bundle: Bundle = .main) throws {
@@ -33,6 +34,26 @@ public final class PodWatchHost {
     }
     deinit { if let runtime { pod_runtime_destroy(runtime) } }
     public func addCrownDegrees(_ degrees: Double) { crownRemainder += degrees * 1000 }
+    public func updatePrimaryTouch(location: CGPoint, in hostSize: CGSize) {
+        guard let point = Self.logicalTouchPoint(location, in: hostSize) else {
+            touches.removeAll(keepingCapacity: true)
+            return
+        }
+        touches = [PodTouch(id: 0, x: Float(point.x), y: Float(point.y))]
+    }
+    public func clearTouches() { touches.removeAll(keepingCapacity: true) }
+    public static func logicalTouchPoint(_ point: CGPoint, in hostSize: CGSize) -> CGPoint? {
+        guard hostSize.width > 0, hostSize.height > 0 else { return nil }
+        let logicalWidth = CGFloat(PODJS_LOGICAL_WIDTH)
+        let logicalHeight = CGFloat(PODJS_LOGICAL_HEIGHT)
+        let scale = min(hostSize.width / logicalWidth, hostSize.height / logicalHeight)
+        let left = (hostSize.width - logicalWidth * scale) / 2
+        let top = (hostSize.height - logicalHeight * scale) / 2
+        let logical = CGPoint(x: (point.x - left) / scale, y: (point.y - top) / scale)
+        guard logical.x >= 0, logical.x < logicalWidth,
+              logical.y >= 0, logical.y < logicalHeight else { return nil }
+        return logical
+    }
     public func setLifecycle(_ state: UInt32) throws { try checked(pod_runtime_set_lifecycle(runtime, state)) }
     /// Advance one deterministic guest turn. A SpriteKit texture is submitted
     /// only when the canonical DrawList/resource hash changes.
@@ -47,7 +68,11 @@ public final class PodWatchHost {
             rotary_secondary_millidegrees: 0
         )
         crownRemainder -= Double(input.rotary_primary_millidegrees)
-        let frameResult = pod_runtime_frame(runtime, &input)
+        let frameResult = touches.withUnsafeBufferPointer { buffer in
+            input.touches = buffer.baseAddress
+            input.touch_count = UInt32(buffer.count)
+            return pod_runtime_frame(runtime, &input)
+        }
         if frameResult == 1 { return }
         try checked(frameResult)
 
