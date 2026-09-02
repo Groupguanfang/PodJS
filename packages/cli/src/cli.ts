@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { cac } from "cac";
 import { POD_TARGETS, type PodTargetProfile } from "../../framework/src/targets.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
@@ -11,8 +12,8 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function targetArg(args: string[]): Target {
-  const raw = args.find(value => value.startsWith("--target="))?.slice(9) ?? args[0];
+function targetArg(positional?: string, option?: string): Target {
+  const raw = option ?? positional;
   if (!raw || !(raw in POD_TARGETS)) {
     fail(`--target wants one of ${Object.keys(POD_TARGETS).join(", ")}`);
   }
@@ -120,11 +121,42 @@ function packageTarget(target: Target): void {
   }
 }
 
-const [command = "doctor", ...args] = process.argv.slice(2);
-switch (command) {
-  case "doctor": doctor(); break;
-  case "build": build(targetArg(args)); break;
-  case "test": test(); break;
-  case "package": packageTarget(targetArg(args)); break;
-  default: fail("usage: pod <doctor|build|test|package> [--target=<watch target>]");
+interface TargetOptions {
+  target?: string;
+}
+
+const cli = cac("pod");
+
+cli
+  .command("doctor", "Check the local PodJS development environment")
+  .action(doctor);
+
+cli
+  .command("build [target]", "Build an app for a watch target")
+  .option("--target <target>", "Watch target (can also be passed positionally)")
+  .action((target: string | undefined, options: TargetOptions) => {
+    build(targetArg(target, options.target));
+  });
+
+cli
+  .command("test", "Run the framework and Rust workspace tests")
+  .action(test);
+
+cli
+  .command("package [target]", "Build and package a watch target")
+  .option("--target <target>", "Watch target (can also be passed positionally)")
+  .action((target: string | undefined, options: TargetOptions) => {
+    packageTarget(targetArg(target, options.target));
+  });
+
+cli.help();
+cli.version("0.1.0");
+cli.addEventListener("command:*", event => {
+  fail(`unknown command: ${(event as CustomEvent<string>).detail}`);
+});
+
+if (process.argv.length === 2) {
+  doctor();
+} else {
+  cli.parse();
 }
