@@ -5,21 +5,31 @@ import WatchKit
 import CPodJS
 
 public final class PodWatchHost {
-    public let scene = PodScene(size: CGSize(width: 240, height: 240))
+    public let scene: PodScene
     private var runtime: OpaquePointer?
+    private let logicalWidth: CGFloat
+    private let logicalHeight: CGFloat
     private var crownRemainder: Double = 0
     private var touches: [PodTouch] = []
     private static let renderScale: UInt32 = 2
 
     public init(bundle: Bundle = .main) throws {
+        let device = WKInterfaceDevice.current()
+        let screenBounds = device.screenBounds
+        let screenScale = device.screenScale
+        let physicalWidth = UInt32((screenBounds.width * screenScale).rounded())
+        let physicalHeight = UInt32((screenBounds.height * screenScale).rounded())
+        logicalWidth = CGFloat((physicalWidth + Self.renderScale - 1) / Self.renderScale)
+        logicalHeight = CGFloat((physicalHeight + Self.renderScale - 1) / Self.renderScale)
+        scene = PodScene(size: CGSize(width: logicalWidth, height: logicalHeight))
         guard pod_runtime_abi_version() == PODJS_RUNTIME_ABI_VERSION else { throw HostError.abi }
         let data = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].path
         runtime = "watchos-watch".withCString { target in data.withCString { path in
           let caps = "[\"input.touch\",\"input.rotary\",\"data.kv\",\"device.haptics\",\"host.lifecycle\",\"host.theme\",\"display.round\",\"net.http\",\"data.fs\"]"
           return caps.withCString { capabilities in
             var c = PodRuntimeConfig(struct_size: UInt32(MemoryLayout<PodRuntimeConfig>.size), target_id: target,
-              host_abi: UInt32(PODJS_RUNTIME_ABI_VERSION), raster_density: 2, physical_width: 416, physical_height: 496,
-              display_density: 2, display_shape: UInt32(POD_DISPLAY_ROUND.rawValue), safe_top: 0, safe_right: 0, safe_bottom: 0, safe_left: 0, data_dir: path, capabilities_json: capabilities)
+              host_abi: UInt32(PODJS_RUNTIME_ABI_VERSION), raster_density: Self.renderScale, physical_width: physicalWidth, physical_height: physicalHeight,
+              display_density: Float(screenScale), display_shape: UInt32(POD_DISPLAY_RECT.rawValue), safe_top: 0, safe_right: 0, safe_bottom: 0, safe_left: 0, data_dir: path, capabilities_json: capabilities)
             return pod_runtime_create(&c)
           }
         }}
@@ -35,17 +45,21 @@ public final class PodWatchHost {
     deinit { if let runtime { pod_runtime_destroy(runtime) } }
     public func addCrownDegrees(_ degrees: Double) { crownRemainder += degrees * 1000 }
     public func updatePrimaryTouch(location: CGPoint, in hostSize: CGSize) {
-        guard let point = Self.logicalTouchPoint(location, in: hostSize) else {
+        guard let point = Self.logicalTouchPoint(location, in: hostSize, logicalSize: scene.size) else {
             touches.removeAll(keepingCapacity: true)
             return
         }
         touches = [PodTouch(id: 0, x: Float(point.x), y: Float(point.y))]
     }
     public func clearTouches() { touches.removeAll(keepingCapacity: true) }
-    public static func logicalTouchPoint(_ point: CGPoint, in hostSize: CGSize) -> CGPoint? {
+    public static func logicalTouchPoint(
+        _ point: CGPoint,
+        in hostSize: CGSize,
+        logicalSize: CGSize = CGSize(width: 240, height: 240)
+    ) -> CGPoint? {
         guard hostSize.width > 0, hostSize.height > 0 else { return nil }
-        let logicalWidth = CGFloat(PODJS_LOGICAL_WIDTH)
-        let logicalHeight = CGFloat(PODJS_LOGICAL_HEIGHT)
+        let logicalWidth = logicalSize.width
+        let logicalHeight = logicalSize.height
         let scale = min(hostSize.width / logicalWidth, hostSize.height / logicalHeight)
         let left = (hostSize.width - logicalWidth * scale) / 2
         let top = (hostSize.height - logicalHeight * scale) / 2
@@ -81,15 +95,16 @@ public final class PodWatchHost {
         guard snapshot.changed != 0 else { return }
 
         let scale = Self.renderScale
-        let side = Int(PODJS_LOGICAL_WIDTH) * Int(scale)
-        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let pixelWidth = Int(pod_runtime_logical_width(runtime)) * Int(scale)
+        let pixelHeight = Int(pod_runtime_logical_height(runtime)) * Int(scale)
+        var pixels = [UInt8](repeating: 0, count: pixelWidth * pixelHeight * 4)
         try pixels.withUnsafeMutableBytes { bytes in
             try checked(pod_runtime_render_rgba(runtime, scale, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count))
         }
         try scene.commit(
             rgba: pixels,
-            pixelWidth: side,
-            pixelHeight: side,
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
             generation: snapshot.content_hash
         )
     }

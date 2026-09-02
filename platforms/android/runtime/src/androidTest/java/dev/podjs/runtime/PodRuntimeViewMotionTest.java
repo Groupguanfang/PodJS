@@ -1,0 +1,67 @@
+package dev.podjs.runtime;
+
+import android.view.InputDevice;
+import android.view.MotionEvent;
+import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+public final class PodRuntimeViewMotionTest {
+    private static MotionEvent scrollEvent(int source, int axis, float value) {
+        MotionEvent.PointerProperties properties = new MotionEvent.PointerProperties();
+        properties.id = 0;
+        properties.toolType = MotionEvent.TOOL_TYPE_MOUSE;
+        MotionEvent.PointerCoords coords = new MotionEvent.PointerCoords();
+        coords.setAxisValue(axis, value);
+        return MotionEvent.obtain(
+            1L, 1L, MotionEvent.ACTION_SCROLL, 1,
+            new MotionEvent.PointerProperties[] { properties },
+            new MotionEvent.PointerCoords[] { coords },
+            0, 0, 1f, 1f, 0, 0, source, 0
+        );
+    }
+
+    @Test
+    public void testMouseWheelUsesVerticalScrollAxis() {
+        MotionEvent event = scrollEvent(InputDevice.SOURCE_MOUSE, MotionEvent.AXIS_VSCROLL, -1f);
+        try {
+            assertEquals(15f / 48f, PodRuntimeView.scrollDegrees(event), 0f);
+        } finally {
+            event.recycle();
+        }
+    }
+
+    @Test
+    public void testMouseWheelScrollAxisFallbackIsAlsoScaled() {
+        MotionEvent event = scrollEvent(InputDevice.SOURCE_MOUSE, MotionEvent.AXIS_SCROLL, -1f);
+        try {
+            assertEquals(15f / 48f, PodRuntimeView.scrollDegrees(event), 0f);
+        } finally {
+            event.recycle();
+        }
+    }
+
+    @Test
+    public void testRotaryEncoderFallsBackToScrollAxis() {
+        MotionEvent event = scrollEvent(
+            InputDevice.SOURCE_ROTARY_ENCODER, MotionEvent.AXIS_SCROLL, 1f
+        );
+        try {
+            assertEquals(-15f, PodRuntimeView.scrollDegrees(event), 0f);
+        } finally {
+            event.recycle();
+        }
+    }
+
+    @Test
+    public void testScrollWithoutVerticalMotionIsNotClaimed() {
+        MotionEvent event = scrollEvent(
+            InputDevice.SOURCE_MOUSE, MotionEvent.AXIS_VSCROLL, 0f
+        );
+        try {
+            assertTrue(Float.isNaN(PodRuntimeView.scrollDegrees(event)));
+        } finally {
+            event.recycle();
+        }
+    }
+}

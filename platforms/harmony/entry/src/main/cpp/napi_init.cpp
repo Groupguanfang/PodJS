@@ -1,8 +1,10 @@
 #include <ace/xcomponent/native_interface_xcomponent.h>
+#include <hilog/log.h>
 #include <napi/native_api.h>
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -17,9 +19,13 @@ struct Host {
   OH_NativeXComponent* component = nullptr;
   PodRuntime* runtime = nullptr;
   GlesRenderer renderer;
+  std::vector<uint8_t> framebuffer;
   std::vector<PodTouch> touches;
+  int32_t rotaryPrimaryMillidegrees = 0;
   uint32_t width = 466;
   uint32_t height = 466;
+  uint32_t logicalWidth = 233;
+  uint32_t logicalHeight = 233;
 
   ~Host() {
     if (runtime) pod_runtime_destroy(runtime);
@@ -27,12 +33,25 @@ struct Host {
 
   bool frame() {
     if (!runtime) return false;
+    const int32_t rotaryPrimary = rotaryPrimaryMillidegrees;
+    rotaryPrimaryMillidegrees = 0;
     PodInputFrame input{sizeof(input), 0, 0, touches.data(),
-                        static_cast<uint32_t>(touches.size()), 0, 0};
+                        static_cast<uint32_t>(touches.size()), rotaryPrimary, 0};
     if (pod_runtime_frame(runtime, &input) != 0) return false;
     PodDrawList list{};
-    if (pod_runtime_snapshot(runtime, &list) != 0 || !list.changed) return false;
-    return renderer.submit(list.words, list.word_count, list.content_hash);
+    const int32_t snapshotResult = pod_runtime_snapshot(runtime, &list);
+    if (rotaryPrimary != 0) {
+      OH_LOG_Print(LOG_APP, LOG_INFO, 0xD002D00, "PodJS",
+                   "axis outcome delta=%{public}d snapshot=%{public}d changed=%{public}d hash=%{public}llu",
+                   rotaryPrimary, snapshotResult, list.changed,
+                   static_cast<unsigned long long>(list.content_hash));
+    }
+    if (snapshotResult != 0 || !list.changed) return false;
+    if (pod_runtime_render_rgba_incremental(
+            runtime, GlesRenderer::kRasterScale, framebuffer.data(), framebuffer.size()) != 0) {
+      return false;
+    }
+    return renderer.submitRgba(framebuffer.data(), framebuffer.size(), list.content_hash);
   }
 };
 
@@ -59,6 +78,23 @@ napi_value boolean(napi_env env, bool value) {
   return result;
 }
 
+napi_value rotary(napi_env env, napi_callback_info info) {
+  size_t count = 1;
+  napi_value args[1]{};
+  napi_get_cb_info(env, info, &count, args, nullptr, nullptr);
+  int32_t delta = 0;
+  if (count != 1 || napi_get_value_int32(env, args[0], &delta) != napi_ok) {
+    napi_throw_type_error(env, nullptr, "rotary requires a millidegree integer");
+    return nullptr;
+  }
+  std::lock_guard lock(g_host.mutex);
+  const int64_t accumulated = static_cast<int64_t>(g_host.rotaryPrimaryMillidegrees) + delta;
+  g_host.rotaryPrimaryMillidegrees = static_cast<int32_t>(std::clamp(
+      accumulated, static_cast<int64_t>(std::numeric_limits<int32_t>::min()),
+      static_cast<int64_t>(std::numeric_limits<int32_t>::max())));
+  return boolean(env, true);
+}
+
 void throwRuntime(napi_env env, const char* fallback) {
   const char* detail = pod_runtime_last_error();
   napi_throw_error(env, nullptr, detail && detail[0] ? detail : fallback);
@@ -72,7 +108,15 @@ void onSurfaceCreated(OH_NativeXComponent* component, void* window) {
       OH_NATIVEXCOMPONENT_RESULT_SUCCESS) return;
   g_host.width = static_cast<uint32_t>(width);
   g_host.height = static_cast<uint32_t>(height);
-  if (g_host.renderer.attach(window, g_host.width, g_host.height)) g_host.frame();
+  if (!g_host.runtime) {
+    g_host.logicalWidth = (g_host.width + GlesRenderer::kRasterScale - 1) /
+                          GlesRenderer::kRasterScale;
+    g_host.logicalHeight = (g_host.height + GlesRenderer::kRasterScale - 1) /
+                           GlesRenderer::kRasterScale;
+  }
+  const uint32_t rasterWidth = g_host.logicalWidth * GlesRenderer::kRasterScale;
+  const uint32_t rasterHeight = g_host.logicalHeight * GlesRenderer::kRasterScale;
+  if (g_host.renderer.attach(window, g_host.width, g_host.height, rasterWidth, rasterHeight)) g_host.frame();
 }
 
 void onSurfaceChanged(OH_NativeXComponent* component, void* window) {
@@ -96,8 +140,19 @@ void onTouch(OH_NativeXComponent* component, void* window) {
     const auto& point = event.touchPoints[index];
     if (!point.isPressed) continue;
     g_host.touches.push_back({static_cast<uint32_t>(point.id),
-                              point.x * 240.0f / std::max(1u, g_host.width),
-                              point.y * 240.0f / std::max(1u, g_host.height)});
+                              point.x * g_host.logicalWidth / std::max(1u, g_host.width),
+                              point.y * g_host.logicalHeight / std::max(1u, g_host.height)});
+  }
+  // Some HarmonyOS wearable builds report isPressed=false for every entry in
+  // touchPoints during MOVE even though the primary contact is still down.
+  // Treating that snapshot as empty synthesizes an early UP, so a swipe turns
+  // into a tap at its starting row. The event-level point is authoritative for
+  // the active DOWN/MOVE contact and keeps its id stable until the real UP.
+  if (g_host.touches.empty() &&
+      (event.type == OH_NATIVEXCOMPONENT_DOWN || event.type == OH_NATIVEXCOMPONENT_MOVE)) {
+    g_host.touches.push_back({static_cast<uint32_t>(event.id),
+                              event.x * g_host.logicalWidth / std::max(1u, g_host.width),
+                              event.y * g_host.logicalHeight / std::max(1u, g_host.height)});
   }
 }
 
@@ -114,6 +169,7 @@ void onSurfaceShow(OH_NativeXComponent*, void*) {
 void onSurfaceHide(OH_NativeXComponent*, void*) {
   std::lock_guard lock(g_host.mutex);
   g_host.touches.clear();
+  g_host.rotaryPrimaryMillidegrees = 0;
   if (g_host.runtime) pod_runtime_set_lifecycle(g_host.runtime, POD_LIFECYCLE_BACKGROUND);
 }
 
@@ -179,6 +235,11 @@ napi_value boot(napi_env env, napi_callback_info info) {
     return nullptr;
   }
   g_host.runtime = runtime.release();
+  g_host.logicalWidth = pod_runtime_logical_width(g_host.runtime);
+  g_host.logicalHeight = pod_runtime_logical_height(g_host.runtime);
+  g_host.framebuffer.resize(
+      static_cast<size_t>(g_host.logicalWidth) * GlesRenderer::kRasterScale *
+      g_host.logicalHeight * GlesRenderer::kRasterScale * 4);
   g_host.frame();
   return boolean(env, true);
 }
@@ -204,8 +265,9 @@ napi_value init(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"preflight", nullptr, preflight, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"boot", nullptr, boot, nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"rotary", nullptr, rotary, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
-  napi_define_properties(env, exports, 2, properties);
+  napi_define_properties(env, exports, 3, properties);
   return exports;
 }
 }

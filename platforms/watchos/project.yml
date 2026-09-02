@@ -21,7 +21,7 @@ targets:
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 8
+        CURRENT_PROJECT_VERSION: 14
         DEVELOPMENT_TEAM: 9887KU7FN7
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: PodJS
@@ -33,6 +33,7 @@ targets:
       gatherCoverageData: false
       testTargets:
         - PodJSWatchTests
+        - PodJSWatchUITests
 
   PodJSWatchTests:
     type: bundle.unit-test
@@ -47,4 +48,18 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.wilflin.podjs.watchgallery.tests
+        SWIFT_VERSION: 6.0
+
+  PodJSWatchUITests:
+    type: bundle.ui-testing
+    platform: watchOS
+    deploymentTarget: "11.0"
+    sources:
+      - path: Tests/PodJSWatchUITests
+    dependencies:
+      - target: PodJSWatchApp
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.wilflin.podjs.watchgallery.uitests
         SWIFT_VERSION: 6.0

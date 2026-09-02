@@ -19,6 +19,8 @@ const values = new Map<string, string>();
 };
 
 const api = await import("../src/watch.ts");
+const frame = await import("../../../vendor/pocketjs/framework/src/frame.ts");
+const services = await import("@pocketjs/framework/services");
 
 afterEach(() => { events.length = 0; effects.length = 0; values.clear(); });
 
@@ -40,6 +42,16 @@ describe("watch API", () => {
     api.__pumpPodEvents();
     stop();
     expect(seen).toEqual([-1250]);
+  });
+
+  test("keeps the host event pump across application frame-hook reset", () => {
+    const seen: number[] = [];
+    const stop = api.onAxisDelta(api.RelativeAxis.Primary, delta => seen.push(delta));
+    frame.resetFrameHooks();
+    events.push({ t: "axis", axis: 0, delta: 12_000 });
+    services.runServicePumps();
+    stop();
+    expect(seen).toEqual([12_000]);
   });
 
   test("emits typed haptics and persists JSON KV values", () => {

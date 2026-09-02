@@ -1,39 +1,13 @@
 #include "gles_renderer.h"
 
 #include <GLES3/gl3.h>
-#include <algorithm>
-
-namespace {
-size_t commandLength(const uint32_t* words, size_t count, size_t index) {
-  if (index >= count) return 0;
-  switch (words[index]) {
-    case 1: return 4;
-    case 2: return 6;
-    case 3: return index + 3 <= count ? 3 + 2 * (words[index + 1] >> 16) : 0;
-    case 4: return 9;
-    case 5: return 3;
-    case 6: return 1;
-    case 7: return 7;
-    case 8: return 12;
-    case 9: return index + 8 <= count ? 8 + (words[index + 7] + 3) / 4 : 0;
-    case 10: return 9;
-    default: return 0;
-  }
-}
-
-void clearColor(uint32_t abgr) {
-  glClearColor(float(abgr & 255) / 255.0f,
-               float((abgr >> 8) & 255) / 255.0f,
-               float((abgr >> 16) & 255) / 255.0f,
-               float(abgr >> 24) / 255.0f);
-}
-}
 
 GlesRenderer::~GlesRenderer() { detach(); }
 
-bool GlesRenderer::attach(void* nativeWindow, uint32_t width, uint32_t height) {
+bool GlesRenderer::attach(void* nativeWindow, uint32_t width, uint32_t height,
+                          uint32_t rasterWidth, uint32_t rasterHeight) {
   detach();
-  if (!nativeWindow || width == 0 || height == 0) return false;
+  if (!nativeWindow || width == 0 || height == 0 || rasterWidth == 0 || rasterHeight == 0) return false;
   display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if (display_ == EGL_NO_DISPLAY || !eglInitialize(display_, nullptr, nullptr)) {
     detach();
@@ -62,15 +36,41 @@ bool GlesRenderer::attach(void* nativeWindow, uint32_t width, uint32_t height) {
   }
   width_ = width;
   height_ = height;
+  rasterWidth_ = rasterWidth;
+  rasterHeight_ = rasterHeight;
   hash_ = 0;
   glViewport(0, 0, static_cast<GLsizei>(width_), static_cast<GLsizei>(height_));
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_BLEND);
+  glGenTextures(1, &colorTexture_);
+  glBindTexture(GL_TEXTURE_2D, colorTexture_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(rasterWidth_),
+               static_cast<GLsizei>(rasterHeight_), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  glGenFramebuffers(1, &framebuffer_);
+  glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         colorTexture_, 0);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    detach();
+    return false;
+  }
+  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   return glGetError() == GL_NO_ERROR;
 }
 
 void GlesRenderer::detach() {
   if (display_ != EGL_NO_DISPLAY) {
+    if (context_ != EGL_NO_CONTEXT && surface_ != EGL_NO_SURFACE &&
+        eglMakeCurrent(display_, surface_, surface_, context_)) {
+      if (framebuffer_ != 0) glDeleteFramebuffers(1, &framebuffer_);
+      if (colorTexture_ != 0) glDeleteTextures(1, &colorTexture_);
+    }
+    framebuffer_ = 0;
+    colorTexture_ = 0;
     eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     if (surface_ != EGL_NO_SURFACE) eglDestroySurface(display_, surface_);
     if (context_ != EGL_NO_CONTEXT) eglDestroyContext(display_, context_);
@@ -81,48 +81,28 @@ void GlesRenderer::detach() {
   surface_ = EGL_NO_SURFACE;
   width_ = 0;
   height_ = 0;
+  rasterWidth_ = 0;
+  rasterHeight_ = 0;
   hash_ = 0;
 }
 
-bool GlesRenderer::validate(const uint32_t* words, size_t count) const {
-  if (!words && count != 0) return false;
-  size_t index = 0;
-  while (index < count) {
-    const size_t length = commandLength(words, count, index);
-    if (length == 0 || length > count - index) return false;
-    index += length;
-  }
-  return index == count;
-}
-
-bool GlesRenderer::submit(const uint32_t* words, size_t count, uint64_t contentHash) {
-  if (!valid() || contentHash == hash_ || !validate(words, count)) return false;
+bool GlesRenderer::submitRgba(const uint8_t* pixels, size_t byteLength,
+                              uint64_t contentHash) {
+  if (!valid() || !pixels || byteLength != rasterBytes() || contentHash == hash_) return false;
   if (!eglMakeCurrent(display_, surface_, surface_, context_)) return false;
-  glDisable(GL_SCISSOR_TEST);
-  clearColor(0xff000000);
-  glClear(GL_COLOR_BUFFER_BIT);
-  glEnable(GL_SCISSOR_TEST);
-  for (size_t index = 0; index < count;) {
-    const uint32_t op = words[index];
-    const size_t length = commandLength(words, count, index);
-    if (op == 1 || op == 2) {
-      const uint32_t xy = words[index + 1];
-      const uint32_t wh = words[index + 2];
-      const int32_t x = static_cast<int16_t>(xy & 0xffff);
-      const int32_t y = static_cast<int16_t>(xy >> 16);
-      const uint32_t w = wh & 0xffff;
-      const uint32_t h = wh >> 16;
-      const int32_t left = x * static_cast<int32_t>(width_) / 240;
-      const int32_t top = y * static_cast<int32_t>(height_) / 240;
-      const int32_t pixelWidth = std::max(1, static_cast<int32_t>(w * width_ / 240));
-      const int32_t pixelHeight = std::max(1, static_cast<int32_t>(h * height_ / 240));
-      glScissor(left, static_cast<int32_t>(height_) - top - pixelHeight, pixelWidth, pixelHeight);
-      clearColor(words[index + 3]);
-      glClear(GL_COLOR_BUFFER_BIT);
-    }
-    index += length;
-  }
-  glDisable(GL_SCISSOR_TEST);
+  glBindTexture(GL_TEXTURE_2D, colorTexture_);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(rasterWidth_),
+                  static_cast<GLsizei>(rasterHeight_), GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  // The runtime framebuffer is top-down; GLES framebuffer coordinates are
+  // bottom-up, so reverse the source Y range during the presentation blit.
+  glBlitFramebuffer(0, static_cast<GLint>(rasterHeight_),
+                    static_cast<GLint>(rasterWidth_), 0,
+                    0, 0, static_cast<GLint>(width_), static_cast<GLint>(height_),
+                    GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   if (glGetError() != GL_NO_ERROR || !eglSwapBuffers(display_, surface_)) return false;
   hash_ = contentHash;
   return true;

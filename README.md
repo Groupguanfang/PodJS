@@ -56,9 +56,10 @@ an unsigned HAP.
   Stage/XComponent/N-API/GLES3 source tree validated by its native build host.
 - A 1,000-row Solid component/performance gallery and contract tests.
 
-The Android Vulkan feasibility renderer currently submits RECT and a flat
-fallback for GRAD_RECT. Font atlases, textures, triangles and precise gradients
-remain Renderer Alpha work; therefore the current gallery intentionally proves
-QuickJS/DrawList/GPU plumbing but is not yet a v1 visual acceptance build.
+The Android renderer incrementally rasterizes the canonical DrawList at density
+2, uploads only changed frames and scales them into the Vulkan swapchain. This preserves
+font atlases, textures, triangles, gradients, alpha and clipping while keeping
+presentation and surface recovery native. Direct per-operation Vulkan pipelines
+remain optional performance work rather than a visual-correctness dependency.
 
 See [architecture.md](docs/architecture.md) for the runtime and host contract.

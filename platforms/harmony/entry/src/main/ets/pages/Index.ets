@@ -15,11 +15,24 @@ import { common } from '@kit.AbilityKit';
       context.resourceManager.getRawFileContentSync('pod.manifest.json'));
     if (!ok) throw new Error('PodJS native runtime did not start');
   }
+  private handleCrown(event: CrownEvent): void {
+    podjs.rotary(Math.round(event.degree * 1000));
+    event.stopPropagation();
+  }
   build() {
     Stack() {
       XComponent({ id: 'podjs', type: XComponentType.SURFACE, libraryname: 'podjs_harmony',
         controller: this.xcomponentController })
-        .width('100%').height('100%').onLoad(() => this.bootRuntime())
-    }.width('100%').height('100%').backgroundColor('#070A12')
+        .width('100%').height('100%')
+        .focusable(false)
+        .onLoad(() => this.bootRuntime())
+    }
+      .id('podjs-crown-target')
+      .width('100%').height('100%').backgroundColor('#070A12')
+      .focusable(true).defaultFocus(true).focusOnTouch(true)
+      .onDigitalCrown((event: CrownEvent) => this.handleCrown(event))
+      .onAppear(() => {
+        this.getUIContext().getFocusController().requestFocus('podjs-crown-target');
+      })
   }
 }

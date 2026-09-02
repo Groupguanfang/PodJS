@@ -50,6 +50,17 @@
                ReferencedContainer = "container:PodJSWatchApp.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "6FD3FE75D593FBD972EED58F"
+               BuildableName = "PodJSWatchUITests.xctest"
+               BlueprintName = "PodJSWatchUITests"
+               ReferencedContainer = "container:PodJSWatchApp.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

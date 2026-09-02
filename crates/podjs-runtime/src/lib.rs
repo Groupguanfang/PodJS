@@ -17,12 +17,13 @@ use pocket_mod::Guest;
 use pocket_mod::qjs::Function;
 use pocket_net::{HttpRequest, HttpTransport, NetFailure, NetSurface, TransportCompletion};
 use pocket_ui_surface::UiSurface;
+use pocketjs_core::damage::{DEFAULT_DAMAGE_REGIONS, DamagePolicy, DamageTracker};
 use pocketjs_core::spec;
 use serde_json::{Value, json};
 
 pub const ABI_VERSION: u32 = 1;
-pub const LOGICAL_WIDTH: u32 = 240;
-pub const LOGICAL_HEIGHT: u32 = 240;
+pub const DEFAULT_LOGICAL_WIDTH: u32 = 240;
+pub const DEFAULT_LOGICAL_HEIGHT: u32 = 240;
 const OK: i32 = 0;
 const IDLE: i32 = 1;
 const ERR_ARGUMENT: i32 = -1;
@@ -217,6 +218,8 @@ pub struct PodRuntime {
     target_id: String,
     host_abi: u32,
     capabilities: Vec<String>,
+    logical_width: u32,
+    logical_height: u32,
     lifecycle: u32,
     mounted: bool,
     package_validated: bool,
@@ -226,6 +229,7 @@ pub struct PodRuntime {
     draw_words: Vec<u32>,
     draw_hash: u64,
     previous_draw_hash: u64,
+    damage_tracker: DamageTracker<DEFAULT_DAMAGE_REGIONS>,
     frame_number: u64,
     poll_effect: CString,
     poll_net: CString,
@@ -418,8 +422,10 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
             return std::ptr::null_mut();
         }
     };
+    let logical_width = config.physical_width.div_ceil(config.raster_density);
+    let logical_height = config.physical_height.div_ceil(config.raster_density);
     let surface = UiSurface::new_with_density(
-        (LOGICAL_WIDTH as f32, LOGICAL_HEIGHT as f32),
+        (logical_width as f32, logical_height as f32),
         config.raster_density,
     );
     surface.set_identity(target_id, config.host_abi);
@@ -443,8 +449,8 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
         events: VecDeque::new(),
         effects: VecDeque::new(),
         metrics: json!({
-            "logicalWidth": LOGICAL_WIDTH,
-            "logicalHeight": LOGICAL_HEIGHT,
+            "logicalWidth": logical_width,
+            "logicalHeight": logical_height,
             "physicalWidth": config.physical_width,
             "physicalHeight": config.physical_height,
             "density": config.display_density,
@@ -470,6 +476,8 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
         target_id: target_id.to_owned(),
         host_abi: config.host_abi,
         capabilities,
+        logical_width,
+        logical_height,
         lifecycle: 0,
         mounted: false,
         package_validated: false,
@@ -479,11 +487,22 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
         draw_words: Vec::new(),
         draw_hash: 0,
         previous_draw_hash: u64::MAX,
+        damage_tracker: DamageTracker::new(),
         frame_number: 0,
         poll_effect: CString::default(),
         poll_net: CString::default(),
         receipt: CString::default(),
     }))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pod_runtime_logical_width(runtime: *const PodRuntime) -> u32 {
+    if runtime.is_null() { 0 } else { unsafe { (*runtime).logical_width } }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pod_runtime_logical_height(runtime: *const PodRuntime) -> u32 {
+    if runtime.is_null() { 0 } else { unsafe { (*runtime).logical_height } }
 }
 
 #[unsafe(no_mangle)]
@@ -798,10 +817,10 @@ pub extern "C" fn pod_runtime_render_rgba(
     if !runtime.mounted || pixels.is_null() || !(1..=4).contains(&scale) {
         return ERR_ARGUMENT;
     }
-    let Some(width) = LOGICAL_WIDTH.checked_mul(scale) else {
+    let Some(width) = runtime.logical_width.checked_mul(scale) else {
         return ERR_ARGUMENT;
     };
-    let Some(height) = LOGICAL_HEIGHT.checked_mul(scale) else {
+    let Some(height) = runtime.logical_height.checked_mul(scale) else {
         return ERR_ARGUMENT;
     };
     let Some(expected) = (width as usize)
@@ -817,6 +836,61 @@ pub extern "C" fn pod_runtime_render_rgba(
     runtime.surface.with_ui(|ui| {
         pocketjs_core::raster::render_scaled(ui, &runtime.draw_words, framebuffer, scale)
     });
+    runtime.damage_tracker.invalidate();
+    OK
+}
+
+/// Incrementally render into a host-retained RGBA8 framebuffer.
+///
+/// Damage tracking is runtime-owned so Android can keep a stable native buffer
+/// without mirroring PocketJS paint state across the C ABI. If the damage plan
+/// cannot be built, correctness wins: render the complete frame and invalidate
+/// the tracker so the next call safely starts a new transaction.
+#[unsafe(no_mangle)]
+pub extern "C" fn pod_runtime_render_rgba_incremental(
+    runtime: *mut PodRuntime,
+    scale: u32,
+    pixels: *mut u8,
+    length: usize,
+) -> i32 {
+    let Ok(runtime) = runtime_mut(runtime) else {
+        return ERR_ARGUMENT;
+    };
+    if !runtime.mounted || pixels.is_null() || !(1..=4).contains(&scale) {
+        return ERR_ARGUMENT;
+    }
+    let Some(width) = runtime.logical_width.checked_mul(scale) else {
+        return ERR_ARGUMENT;
+    };
+    let Some(height) = runtime.logical_height.checked_mul(scale) else {
+        return ERR_ARGUMENT;
+    };
+    let Some(expected) = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|value| value.checked_mul(4))
+    else {
+        return ERR_ARGUMENT;
+    };
+    if length != expected {
+        return ERR_ARGUMENT;
+    }
+    let framebuffer = unsafe { slice::from_raw_parts_mut(pixels, length) };
+    let result = runtime.surface.with_ui(|ui| {
+        pocketjs_core::raster::render_scaled_incremental(
+            ui,
+            &runtime.draw_words,
+            framebuffer,
+            scale,
+            &mut runtime.damage_tracker,
+            DamagePolicy::default(),
+        )
+    });
+    if result.is_err() {
+        runtime.surface.with_ui(|ui| {
+            pocketjs_core::raster::render_scaled(ui, &runtime.draw_words, framebuffer, scale)
+        });
+        runtime.damage_tracker.invalidate();
+    }
     OK
 }
 
@@ -1131,11 +1205,23 @@ mod tests {
         };
         assert_eq!(pod_runtime_snapshot(runtime, &mut snapshot), 0);
         assert_eq!(snapshot.frame_number, 1);
-        let mut rgba = vec![0u8; (LOGICAL_WIDTH * LOGICAL_HEIGHT * 4) as usize];
+        let mut rgba = vec![0u8; (pod_runtime_logical_width(runtime)
+            * pod_runtime_logical_height(runtime) * 4) as usize];
+        let mut incremental = vec![0u8; rgba.len()];
+        assert_eq!(
+            pod_runtime_render_rgba_incremental(
+                runtime,
+                1,
+                incremental.as_mut_ptr(),
+                incremental.len(),
+            ),
+            OK
+        );
         assert_eq!(
             pod_runtime_render_rgba(runtime, 1, rgba.as_mut_ptr(), rgba.len()),
             OK
         );
+        assert_eq!(incremental, rgba);
         assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
         assert_eq!(
             pod_runtime_render_rgba(runtime, 0, rgba.as_mut_ptr(), rgba.len()),
@@ -1143,6 +1229,15 @@ mod tests {
         );
         assert_eq!(
             pod_runtime_render_rgba(runtime, 1, rgba.as_mut_ptr(), rgba.len() - 1),
+            ERR_ARGUMENT
+        );
+        assert_eq!(
+            pod_runtime_render_rgba_incremental(
+                runtime,
+                1,
+                incremental.as_mut_ptr(),
+                incremental.len() - 1,
+            ),
             ERR_ARGUMENT
         );
         pod_runtime_destroy(runtime);

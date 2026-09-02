@@ -5,12 +5,12 @@ acceptance gates have passed.
 
 | Milestone | Current evidence | Remaining gate |
 | --- | --- | --- |
-| Feasibility / Android | OWW242 API 30 real device loads the signed bundle, starts QuickJS, emits a 6,464-word DrawList and presents Vulkan rectangles | font/texture/triangle rendering |
+| Feasibility / Android | OWW242 API 30 real device loads the signed bundle, starts QuickJS, emits a 6,464-word DrawList, incrementally rasterizes at density 2 and presents through Vulkan with text, gradients, rounded geometry and clipping intact | physical crown matrix and sustained frame/power gates |
 | Feasibility / Wear OS | ARMv7/ARM64 APK builds with the shared Vulkan AAR and rotary adapter | emulator launch/input run |
 | Feasibility / watchOS | Xcode 27 on an Apple Silicon Mac cross-builds Rust/QuickJS, packages device/simulator slices as an XCFramework, passes three SpriteKit/parser tests on an Apple Watch simulator, and launches a signed Hero build on a Series 9 running watchOS 27 | touch and Digital Crown input run |
 | Feasibility / HarmonyOS | DevEco 26 on Windows cross-builds ARM64 Rust/QuickJS; the compiled N-API host validates and evaluates embedded assets, owns the XComponent NativeWindow lifecycle, accepts touch/frame callbacks and emits an unsigned HAP | configure signing, build with the HarmonyOS 6.1 wearable SDK and run on WATCH 5 |
 | Runtime Alpha | C ABI, package preflight, 240x240 metrics, frame-boundary events and deterministic hash snapshots have native tests | four-host tape parity |
-| Renderer Alpha | Android Vulkan swapchain/RECT is live; the DevEco-compiled Harmony EGL/GLES3 path clears, scales RECT commands and swaps the XComponent surface; watchOS renders the canonical DrawList to a density-2 RGBA texture and submits it through SpriteKit only when its content hash changes | run GLES on WATCH 5; full DrawList on Vulkan/GLES and establish screenshot goldens |
+| Renderer Alpha | Android damage-rasterizes the canonical DrawList to density-2 RGBA and transfers changed frames through the Vulkan swapchain; the DevEco-compiled Harmony EGL/GLES3 path clears, scales RECT commands and swaps the XComponent surface; watchOS uses the same canonical RGBA path and submits it through SpriteKit only when its content hash changes | run GLES on WATCH 5; full DrawList on GLES and establish screenshot goldens |
 | Framework Beta | Solid API, capabilities, rotary, lifecycle/theme, KV, haptics and Android HTTP bridge exist | four-host error recovery and storage/network integration tests |
 | v1 | not reached | device matrix, 60-second frame gate and 10-minute stability/power baseline |
 

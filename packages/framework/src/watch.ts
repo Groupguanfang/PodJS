@@ -1,4 +1,4 @@
-import { onFrame } from "@pocketjs/framework/lifecycle";
+import { registerServicePump } from "@pocketjs/framework/services";
 import type { PodCapabilityId } from "./targets.ts";
 
 export const RelativeAxis = Object.freeze({ Primary: 0, Secondary: 1 } as const);
@@ -9,8 +9,8 @@ export type SystemTheme = "light" | "dark";
 export type HapticKind = "click" | "success" | "warning" | "error";
 
 export interface DisplayMetrics {
-  readonly logicalWidth: 240;
-  readonly logicalHeight: 240;
+  readonly logicalWidth: number;
+  readonly logicalHeight: number;
   readonly physicalWidth: number;
   readonly physicalHeight: number;
   readonly density: number;
@@ -174,4 +174,8 @@ export function __pumpPodEvents(): void {
   }
 }
 
-onFrame(__pumpPodEvents);
+// Host events are realm-scoped input, not component-scoped UI lifecycle.
+// A module-level onFrame hook is cleared by mount() before the app component
+// is created; service pumps deliberately survive that reset and run at the
+// start of every mounted frame.
+registerServicePump(__pumpPodEvents);

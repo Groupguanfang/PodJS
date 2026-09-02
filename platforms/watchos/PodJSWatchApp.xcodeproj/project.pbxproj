@@ -10,21 +10,36 @@
 		050E7454C25A9EDBE97DA24F /* PodJSWatch in Frameworks */ = {isa = PBXBuildFile; productRef = 1C9986714F164781613490A2 /* PodJSWatch */; };
 		1A2711399E862BC529E1CA2E /* main.pak in Resources */ = {isa = PBXBuildFile; fileRef = 4C52F3BFA53DB99801F21F34 /* main.pak */; };
 		3E6E1FC584CE969F4D86E784 /* DrawListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D8426EEE137778042E9BC4 /* DrawListTests.swift */; };
+		53A3A0AB0DD26AAFCC1DC36C /* CrownInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B21A0A562AEF7A9472F023 /* CrownInputTests.swift */; };
 		945C194B38518FAFA9E7353D /* PodJSWatch in Frameworks */ = {isa = PBXBuildFile; productRef = E820AE4AC376FD4B5C64F6A7 /* PodJSWatch */; };
 		9FFA74890185CDD2FDC177FF /* main.js in Resources */ = {isa = PBXBuildFile; fileRef = D196C9FC3C8056F0F32D0D0C /* main.js */; };
+		D6B69D79E43A3199ECEDEBE4 /* project.yml in Resources */ = {isa = PBXBuildFile; fileRef = DDFBF0E2BCBB04210FB5D8B4 /* project.yml */; };
 		DB1812D0712EE7F7A2C44983 /* PodJSWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C906639F2623E862CA732C81 /* PodJSWatchApp.swift */; };
 		E5E5110519217DC7ABD9E730 /* pod.manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = DC65D96CA652D25785D1245F /* pod.manifest.json */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2A06F613DE0CA81F974C9C42 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0C8FA131E0B3390B0BD69125 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FEF6CD9A41E3A562A958D1FE;
+			remoteInfo = PodJSWatchApp;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		1DFAD3279A070ACC3019F4F7 /* watchos */ = {isa = PBXFileReference; lastKnownFileType = folder; name = watchos; path = .; sourceTree = SOURCE_ROOT; };
 		4C52F3BFA53DB99801F21F34 /* main.pak */ = {isa = PBXFileReference; path = main.pak; sourceTree = "<group>"; };
 		5579625E0F19AA6EA0814A84 /* PodJSWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PodJSWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5BA408E6E7EDF281BE407113 /* PodJSWatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PodJSWatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7174A30B7E42A97D03D8064A /* PodJSWatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PodJSWatchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0D8426EEE137778042E9BC4 /* DrawListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawListTests.swift; sourceTree = "<group>"; };
 		C906639F2623E862CA732C81 /* PodJSWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodJSWatchApp.swift; sourceTree = "<group>"; };
 		D196C9FC3C8056F0F32D0D0C /* main.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = main.js; sourceTree = "<group>"; };
+		D2B21A0A562AEF7A9472F023 /* CrownInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrownInputTests.swift; sourceTree = "<group>"; };
 		DC65D96CA652D25785D1245F /* pod.manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = pod.manifest.json; sourceTree = "<group>"; };
+		DDFBF0E2BCBB04210FB5D8B4 /* project.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = project.yml; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,8 +103,19 @@
 			children = (
 				5579625E0F19AA6EA0814A84 /* PodJSWatchApp.app */,
 				7174A30B7E42A97D03D8064A /* PodJSWatchTests.xctest */,
+				5BA408E6E7EDF281BE407113 /* PodJSWatchUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		DDCEA10AEA98EB028B6D5307 /* PodJSWatchUITests */ = {
+			isa = PBXGroup;
+			children = (
+				D2B21A0A562AEF7A9472F023 /* CrownInputTests.swift */,
+				DDFBF0E2BCBB04210FB5D8B4 /* project.yml */,
+			);
+			name = PodJSWatchUITests;
+			path = Tests/PodJSWatchUITests;
 			sourceTree = "<group>";
 		};
 		EF0371BD4548B49DCCF671A9 = {
@@ -98,6 +124,7 @@
 				0548CDC0D68B3147625A434C /* App */,
 				971B809C0EAE71317E011859 /* Packages */,
 				71CC51C3D0A24E38F90DFE1F /* PodJSWatchTests */,
+				DDCEA10AEA98EB028B6D5307 /* PodJSWatchUITests */,
 				82E7F38D7E390AF43C7FF59F /* watchos-watch */,
 				D2E6C415A012B968CFE762AF /* Products */,
 			);
@@ -124,6 +151,25 @@
 			productName = PodJSWatchTests;
 			productReference = 7174A30B7E42A97D03D8064A /* PodJSWatchTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		6FD3FE75D593FBD972EED58F /* PodJSWatchUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9D2C74E66F90A1A60F518C57 /* Build configuration list for PBXNativeTarget "PodJSWatchUITests" */;
+			buildPhases = (
+				095E22BB01D2863765C3EB26 /* Sources */,
+				024710F0CED36F71A283983D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B31EB5EB8B656A9FE9C336B3 /* PBXTargetDependency */,
+			);
+			name = PodJSWatchUITests;
+			packageProductDependencies = (
+			);
+			productName = PodJSWatchUITests;
+			productReference = 5BA408E6E7EDF281BE407113 /* PodJSWatchUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		FEF6CD9A41E3A562A958D1FE /* PodJSWatchApp */ = {
 			isa = PBXNativeTarget;
@@ -154,6 +200,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					6FD3FE75D593FBD972EED58F = {
+						TestTargetID = FEF6CD9A41E3A562A958D1FE;
+					};
 					FEF6CD9A41E3A562A958D1FE = {
 						DevelopmentTeam = 9887KU7FN7;
 						ProvisioningStyle = Automatic;
@@ -179,11 +228,20 @@
 			targets = (
 				FEF6CD9A41E3A562A958D1FE /* PodJSWatchApp */,
 				0D27CCA31970ADAE8262DA01 /* PodJSWatchTests */,
+				6FD3FE75D593FBD972EED58F /* PodJSWatchUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		024710F0CED36F71A283983D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D6B69D79E43A3199ECEDEBE4 /* project.yml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BD632C16544EC9B88BFB6A85 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -197,6 +255,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		095E22BB01D2863765C3EB26 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				53A3A0AB0DD26AAFCC1DC36C /* CrownInputTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9B8380658D36653061B2DB51 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -214,6 +280,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B31EB5EB8B656A9FE9C336B3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FEF6CD9A41E3A562A958D1FE /* PodJSWatchApp */;
+			targetProxy = 2A06F613DE0CA81F974C9C42 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		2C06BC5753502C715DA1D8EF /* Release */ = {
@@ -296,7 +370,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = 9887KU7FN7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PodJS;
@@ -374,6 +448,26 @@
 			};
 			name = Debug;
 		};
+		81C49F08C1C0FE6DBA383AA5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.wilflin.podjs.watchgallery.uitests;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = PodJSWatchApp;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
 		8B34059495F2FD712A24C6DA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -398,7 +492,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = 9887KU7FN7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = PodJS;
@@ -409,6 +503,26 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		DC10EE9238784DE622BF2470 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.wilflin.podjs.watchgallery.uitests;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_TARGET_NAME = PodJSWatchApp;
 				WATCHOS_DEPLOYMENT_TARGET = 11.0;
 			};
 			name = Debug;
@@ -439,6 +553,15 @@
 			buildConfigurations = (
 				8B34059495F2FD712A24C6DA /* Debug */,
 				3418CC282894BEB7F011FF87 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9D2C74E66F90A1A60F518C57 /* Build configuration list for PBXNativeTarget "PodJSWatchUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DC10EE9238784DE622BF2470 /* Debug */,
+				81C49F08C1C0FE6DBA383AA5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

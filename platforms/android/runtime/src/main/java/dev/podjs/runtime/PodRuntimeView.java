@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.AssetManager;
 import android.graphics.SurfaceTexture;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.TextureView;
@@ -117,19 +118,38 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
         if (event.getActionMasked() != MotionEvent.ACTION_UP && event.getActionMasked() != MotionEvent.ACTION_CANCEL) {
             for (int i = 0; i < count; i++) {
                 ids[i] = event.getPointerId(i);
-                xy[i * 2] = event.getX(i) * 240f / getWidth();
-                xy[i * 2 + 1] = event.getY(i) * 240f / getHeight();
+                xy[i * 2] = event.getX(i);
+                xy[i * 2 + 1] = event.getY(i);
             }
         } else count = 0;
         nativeInput(host, ids, xy, count, 0);
         return true;
     }
 
+    private static final float DEGREES_PER_SCROLL_UNIT = 15f;
+    private static final float ANDROID_MOUSE_WHEEL_SCALE = 1f / 48f;
+
+    /** Translate physical crowns and simulated mouse wheels to the watch axis ABI. */
+    static float scrollDegrees(MotionEvent event) {
+        if (event.getAction() != MotionEvent.ACTION_SCROLL) return Float.NaN;
+        float vertical = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        if (vertical == 0f) vertical = event.getAxisValue(MotionEvent.AXIS_SCROLL);
+        if (vertical == 0f) return Float.NaN;
+        float scale = event.isFromSource(InputDevice.SOURCE_MOUSE)
+            ? ANDROID_MOUSE_WHEEL_SCALE
+            : 1f;
+        return -vertical * DEGREES_PER_SCROLL_UNIT * scale;
+    }
+
+    public boolean handleScrollMotion(MotionEvent event) {
+        float degrees = scrollDegrees(event);
+        if (Float.isNaN(degrees)) return false;
+        addRotaryDegrees(degrees);
+        return true;
+    }
+
     @Override public boolean onGenericMotionEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_SCROLL) {
-            addRotaryDegrees(-event.getAxisValue(MotionEvent.AXIS_SCROLL) * 15f);
-            return true;
-        }
+        if (handleScrollMotion(event)) return true;
         return super.onGenericMotionEvent(event);
     }
 

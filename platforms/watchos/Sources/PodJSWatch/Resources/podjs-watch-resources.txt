@@ -1,0 +1,1 @@
+PodJS watchOS package resources

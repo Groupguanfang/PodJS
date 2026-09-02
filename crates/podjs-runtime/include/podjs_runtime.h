@@ -9,8 +9,8 @@ extern "C" {
 #endif
 
 #define PODJS_RUNTIME_ABI_VERSION 1
-#define PODJS_LOGICAL_WIDTH 240
-#define PODJS_LOGICAL_HEIGHT 240
+#define PODJS_DEFAULT_LOGICAL_WIDTH 240
+#define PODJS_DEFAULT_LOGICAL_HEIGHT 240
 #define PODJS_MAX_TOUCHES 8
 
 typedef struct PodRuntime PodRuntime;
@@ -95,6 +95,8 @@ typedef struct PodFontView {
 uint32_t pod_runtime_abi_version(void);
 const char *pod_runtime_last_error(void);
 PodRuntime *pod_runtime_create(const PodRuntimeConfig *config);
+uint32_t pod_runtime_logical_width(const PodRuntime *runtime);
+uint32_t pod_runtime_logical_height(const PodRuntime *runtime);
 int32_t pod_runtime_load_pak(PodRuntime *runtime, const uint8_t *bytes, size_t length);
 int32_t pod_runtime_validate_package(PodRuntime *runtime, const char *manifest_json);
 int32_t pod_runtime_eval_bundle(PodRuntime *runtime, const uint8_t *source, size_t length,
@@ -105,9 +107,13 @@ int32_t pod_runtime_post_event(PodRuntime *runtime, const char *json_object);
 int32_t pod_runtime_frame(PodRuntime *runtime, const PodInputFrame *input);
 int32_t pod_runtime_snapshot(PodRuntime *runtime, PodDrawList *out);
 /* Rasterize the current DrawList to tightly packed RGBA8. `scale` is 1..4;
- * length must equal 240 * scale * 240 * scale * 4. */
+ * length must equal logical_width * scale * logical_height * scale * 4. */
 int32_t pod_runtime_render_rgba(PodRuntime *runtime, uint32_t scale,
                                 uint8_t *pixels, size_t length);
+/* Incremental equivalent for a persistent framebuffer. The first call draws a
+ * complete frame; later calls repaint only damage regions when possible. */
+int32_t pod_runtime_render_rgba_incremental(PodRuntime *runtime, uint32_t scale,
+                                            uint8_t *pixels, size_t length);
 int32_t pod_runtime_texture(PodRuntime *runtime, uint32_t slot, PodTextureView *out);
 int32_t pod_runtime_font(PodRuntime *runtime, uint32_t slot, PodFontView *out);
 

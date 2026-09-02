@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
-import { VirtualList } from "@pocketjs/framework/virtual-list";
+import { VirtualList, type VirtualListHandle } from "@pocketjs/framework/virtual-list";
 import type { NodeMirror } from "@pocketjs/framework/renderer";
 import {
   RelativeAxis,
@@ -16,6 +16,8 @@ import {
 
 const ROWS = 1_000;
 const ROW_HEIGHT = 32;
+const WHEEL_DEGREES_PER_ROW = 12;
+const WHEEL_INERTIA_MS = 120;
 
 export default function Gallery() {
   const metrics = getDisplayMetrics();
@@ -23,20 +25,17 @@ export default function Gallery() {
   const [theme, setTheme] = createSignal("dark");
   const [state, setState] = createSignal("active");
   let pulse: NodeMirror | undefined;
-  let list: { scrollToIndex(index: number, align?: "start" | "center" | "end" | "nearest", animated?: boolean): void } | undefined;
-  let rotaryRemainder = 0;
+  let list: VirtualListHandle | undefined;
 
   onLifecycleChange(setState);
   onSystemThemeChange(setTheme);
   onAxisDelta(RelativeAxis.Primary, delta => {
-    rotaryRemainder += delta;
-    const detent = 12 * RelativeAxisUnits.PerDegree;
-    if (Math.abs(rotaryRemainder) < detent) return;
-    const steps = Math.trunc(rotaryRemainder / detent);
-    rotaryRemainder -= steps * detent;
-    const next = Math.max(0, Math.min(ROWS - 1, selected() + steps));
-    setSelected(next);
-    list?.scrollToIndex(next, "center", true);
+    // The crown scrolls content without changing selection. Re-targeting the
+    // ease-out tween accumulates wheel input, then coasts smoothly to rest.
+    list?.scroller.scrollBy(
+      -delta * ROW_HEIGHT / (WHEEL_DEGREES_PER_ROW * RelativeAxisUnits.PerDegree),
+      { durMs: WHEEL_INERTIA_MS },
+    );
   });
 
   function activate(index: number) {
