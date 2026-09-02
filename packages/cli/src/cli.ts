@@ -115,8 +115,13 @@ function packageTarget(target: Target): void {
       "-derivedDataPath", ".pod/watchos", "CODE_SIGNING_ALLOWED=NO", "build",
     ]);
   } else {
-    if (process.platform !== "win32") fail("HarmonyOS packaging must run on the configured Windows DevEco host");
-    run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-harmony-runtime.ps1"]);
+    if (process.platform === "win32") {
+      run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-harmony-runtime.ps1"]);
+    } else if (process.platform === "darwin") {
+      run(["bash", "scripts/build-harmony-runtime.sh"]);
+    } else {
+      fail("HarmonyOS packaging requires DevEco Studio on Windows or macOS");
+    }
   }
 }
 
