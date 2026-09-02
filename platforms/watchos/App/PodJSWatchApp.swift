@@ -1,5 +1,6 @@
 import SwiftUI
 import SpriteKit
+import Combine
 import PodJSWatch
 
 @main
@@ -8,6 +9,7 @@ struct PodJSWatchGalleryApp: App {
         WindowGroup {
             PodJSWatchRootView()
         }
+        .persistentSystemOverlays(.hidden)
     }
 }
 
@@ -15,43 +17,55 @@ private struct PodJSWatchRootView: View {
     @State private var host: PodWatchHost?
     @State private var status = "Starting PodJS…"
     @State private var crownValue = 0.0
-    @FocusState private var crownFocused: Bool
+    private let frameTimer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Group {
             if let host {
-                GeometryReader { geometry in
+                ZStack {
                     SpriteView(scene: host.scene, preferredFramesPerSecond: 60)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                                .onChanged { value in
-                                    host.updatePrimaryTouch(
-                                        location: value.location,
-                                        in: geometry.size
-                                    )
+                        .allowsHitTesting(false)
+                        .focusable(false)
+                    TouchScrollBridge { pointDelta in
+                        host.addCrownDegrees(Double(pointDelta) * 0.4)
+                        do {
+                            try host.frame()
+                        } catch {
+                            let message = String(describing: error)
+                            status = message
+                            recordDiagnostic(message)
+                        }
+                    }
+                    Color.clear
+                        .accessibilityIdentifier("podjs-crown-status")
+                        .frame(width: 1, height: 1)
+                        .focusable(true, interactions: .edit)
+                        .digitalCrownRotation(
+                            Binding(
+                                get: { crownValue },
+                                set: { newValue in
+                                    host.addCrownDegrees((newValue - crownValue) * 0.12)
+                                    crownValue = newValue
+                                    do {
+                                        try host.frame()
+                                    } catch {
+                                        let message = String(describing: error)
+                                        status = message
+                                        recordDiagnostic(message)
+                                    }
                                 }
-                                .onEnded { _ in host.clearTouches() }
+                            ),
+                            from: -100_000,
+                            through: 100_000,
+                            by: 1,
+                            sensitivity: .high,
+                            isContinuous: true,
+                            isHapticFeedbackEnabled: false
                         )
                 }
                 .ignoresSafeArea()
-                .focusable()
-                .focused($crownFocused)
-                .digitalCrownRotation(
-                    $crownValue,
-                    from: -100_000,
-                    through: 100_000,
-                    by: 1,
-                    sensitivity: .high,
-                    isContinuous: true,
-                    isHapticFeedbackEnabled: false
-                )
-                .onChange(of: crownValue) { oldValue, newValue in
-                    // One SwiftUI detent selects one gallery row. The public
-                    // PodJS contract remains physical integer millidegrees.
-                    host.addCrownDegrees((newValue - oldValue) * 12)
-                }
-                .onAppear { crownFocused = true }
+                ._statusBarHidden(true)
+                .persistentSystemOverlays(.hidden)
             } else {
                 VStack(spacing: 8) {
                     Text("PodJS")
@@ -73,15 +87,21 @@ private struct PodJSWatchRootView: View {
                 status = "Runtime ready"
                 recordDiagnostic("runtime ready")
                 print("PodJSWatch: runtime ready")
-                while !Task.isCancelled {
-                    try await Task.sleep(for: .milliseconds(16))
-                    try created.frame()
-                }
             } catch {
                 let message = String(describing: error)
                 status = message
                 recordDiagnostic(message)
                 print("PodJSWatch: runtime error: \(message)")
+            }
+        }
+        .onReceive(frameTimer) { _ in
+            guard let host else { return }
+            do {
+                try host.frame()
+            } catch {
+                let message = String(describing: error)
+                status = message
+                recordDiagnostic(message)
             }
         }
     }
@@ -100,5 +120,43 @@ private struct PodJSWatchRootView: View {
             atomically: true,
             encoding: .utf8
         )
+    }
+}
+
+private struct TouchScrollBridge: View {
+    let onDelta: (CGFloat) -> Void
+    @State private var previousOffset: CGFloat?
+
+    var body: some View {
+        ScrollView(.vertical) {
+            Color.black.opacity(0.001)
+                .frame(height: 40_000)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: TouchScrollOffsetKey.self,
+                            value: geometry.frame(in: .named("podjs-touch-scroll")).minY
+                        )
+                    }
+                }
+        }
+        .coordinateSpace(name: "podjs-touch-scroll")
+        .scrollIndicators(.hidden)
+        .focusable(false)
+        .onPreferenceChange(TouchScrollOffsetKey.self) { offset in
+            defer { previousOffset = offset }
+            guard let previousOffset else { return }
+            let delta = offset - previousOffset
+            guard abs(delta) >= 0.25 else { return }
+            onDelta(delta)
+        }
+        .accessibilityIdentifier("podjs-touch-scroll")
+    }
+}
+
+private struct TouchScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
