@@ -21,6 +21,7 @@ application package. Debug deployment may replace those assets over ADB or HDC.
 
 ```sh
 bun install
+(cd vendor/pocketjs && bun install)
 bun run doctor
 bun test
 cargo test --workspace
@@ -38,10 +39,13 @@ AAR. Wear OS uses the same runtime/AAR with a separate manifest and rotary
 shell. watchOS packaging is run on the configured Xcode 16+ Mac; use
 `scripts/build-watchos-runtime.sh` to build the device/simulator XCFramework
 and its Swift Package release archive. The checked-in `PodJSWatchApp.xcodeproj`
-produces the standalone, Watch-only application bundle. On a Windows
-DevEco host, `pod package --target=harmonyos-watch` uses the checked-in
-PowerShell script to cross-build Rust/QuickJS, embed the bundle assets and emit
-an unsigned HAP.
+produces the standalone, Watch-only application bundle. On a Windows or macOS
+DevEco host, `pod package --target=harmonyos-watch` uses the checked-in platform
+script to cross-build Rust/QuickJS, embed the bundle assets and emit an unsigned
+HAP. On macOS, DevEco Studio is discovered in
+`/Applications/DevEco-Studio.app`; set `DEVECO_STUDIO_HOME` to the application's
+`Contents` directory for a custom installation. The HAP still needs a DevEco
+signing configuration before it can be installed on a physical watch.
 
 ## Implemented baseline
 

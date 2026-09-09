@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { cac } from "cac";
 import { POD_TARGETS, type PodTargetProfile } from "../../framework/src/targets.ts";
 import { resolvePodProject, type ResolvedPodProject } from "./project.ts";
 import { buildBackground } from "./background-build.ts";
@@ -13,8 +14,8 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function targetArg(args: string[]): Target {
-  const raw = args.find(value => value.startsWith("--target="))?.slice(9) ?? args[0];
+function targetArg(positional?: string, option?: string): Target {
+  const raw = option ?? positional;
   if (!raw || !(raw in POD_TARGETS)) {
     fail(`--target wants one of ${Object.keys(POD_TARGETS).join(", ")}`);
   }
@@ -130,27 +131,68 @@ async function packageTarget(target: Target, project?: ResolvedPodProject): Prom
       "-derivedDataPath", ".pod/watchos", "CODE_SIGNING_ALLOWED=NO", "build",
     ]);
   } else {
-    if (process.platform !== "win32") fail("HarmonyOS packaging must run on the configured Windows DevEco host");
-    run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-harmony-runtime.ps1"]);
+    if (process.platform === "win32") {
+      run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-harmony-runtime.ps1"]);
+    } else if (process.platform === "darwin") {
+      run(["bash", "scripts/build-harmony-runtime.sh"]);
+    } else {
+      fail("HarmonyOS packaging requires DevEco Studio on Windows or macOS");
+    }
   }
 }
 
-const [command = "doctor", ...args] = process.argv.slice(2);
-const projectArg = args.find(value => value.startsWith("--project="))?.slice("--project=".length);
-let project: ResolvedPodProject | undefined;
-if (projectArg) {
+function projectOption(path?: string): ResolvedPodProject | undefined {
+  if (!path) return undefined;
   try {
-    project = resolvePodProject(projectArg, POD_TARGETS, {
+    return resolvePodProject(path, POD_TARGETS, {
       fontRegular: join(ROOT, "assets/fonts/NotoSansCJKSC-Regular-subset.ttf"),
       fontBold: join(ROOT, "assets/fonts/NotoSansCJKSC-Bold-subset.ttf"),
       outputRoot: join(ROOT, "dist/projects"),
     });
   } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
 }
-switch (command) {
-  case "doctor": doctor(); break;
-  case "build": await build(targetArg(args), project); break;
-  case "test": test(); break;
-  case "package": await packageTarget(targetArg(args), project); break;
-  default: fail("usage: pod <doctor|build|test|package> [--target=<watch target>] [--project=<absolute directory or pod.config.json>]");
+
+interface TargetOptions {
+  target?: string;
+  project?: string;
+}
+
+const cli = cac("pod");
+
+cli
+  .command("doctor", "Check the local PodJS development environment")
+  .action(doctor);
+
+cli
+  .command("build [target]", "Build an app for a watch target")
+  .option("--target <target>", "Watch target (can also be passed positionally)")
+  .option("--project <path>", "Project directory or pod.config.json")
+  .action(async (target: string | undefined, options: TargetOptions) => {
+    await build(targetArg(target, options.target), projectOption(options.project));
+  });
+
+cli
+  .command("test", "Run the framework and Rust workspace tests")
+  .action(test);
+
+cli
+  .command("package [target]", "Build and package a watch target")
+  .option("--target <target>", "Watch target (can also be passed positionally)")
+  .option("--project <path>", "Project directory or pod.config.json")
+  .action(async (target: string | undefined, options: TargetOptions) => {
+    await packageTarget(targetArg(target, options.target), projectOption(options.project));
+  });
+
+cli.help();
+cli.version("0.1.0");
+cli.addEventListener("command:*", event => {
+  fail(`unknown command: ${(event as CustomEvent<string>).detail}`);
+});
+
+if (process.argv.length === 2) {
+  doctor();
+} else {
+  cli.parse(process.argv, { run: false });
+  await cli.runMatchedCommand();
+
 }

@@ -2,5 +2,8 @@
   "name": "@podjs/cli",
   "private": true,
   "version": "0.1.0",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "cac": "^7.0.0"
+  }
 }
