@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.5.0)
+project(podjs_companion)
+add_library(podjs_companion SHARED napi_init.cpp)
+target_compile_features(podjs_companion PRIVATE cxx_std_17)
+target_link_libraries(podjs_companion PRIVATE ace_napi.z ohcrypto)

@@ -1,0 +1,1 @@
+{ "string": [{ "name": "companion_description", "value": "PodJS phone companion example" }, { "name": "companion_label", "value": "PodJS Companion" }, { "name": "companion_distributed_reason", "value": "用于在你发起配对或连接时，与所选设备建立本地分布式连接。" }, { "name": "companion_bluetooth_reason", "value": "用于在你发起配对或同步时，发现附近的 PodJS 设备并通过蓝牙收发数据。" }] }

@@ -1,0 +1,10 @@
+{
+  "entry": "main.tsx",
+  "appId": "dev.podjs.backgroundtest",
+  "name": "PodJS Background Test",
+  "versionName": "0.1.0",
+  "versionCode": 1,
+  "capabilities": ["background.scheduled", "notification.local"],
+  "background": { "refresh": "background-kv.ts" },
+  "backgroundServices": ["kv.get", "kv.set"]
+}

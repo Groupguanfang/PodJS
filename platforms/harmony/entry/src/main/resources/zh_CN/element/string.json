@@ -1,0 +1,8 @@
+{ "string": [
+  { "name": "pod_a11y_checked", "value": "已选中" },
+  { "name": "pod_a11y_unchecked", "value": "未选中" },
+  { "name": "pod_a11y_mixed", "value": "部分选中" },
+  { "name": "pod_a11y_expanded", "value": "已展开" },
+  { "name": "pod_a11y_collapsed", "value": "已收起" },
+  { "name": "pod_a11y_busy", "value": "正忙" }
+] }

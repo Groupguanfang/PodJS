@@ -1,0 +1,42 @@
+import { test, expect } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { CompanionFileSender } from '../platforms/harmony/companion/src/main/ets/CompanionFileSender';
+import { CompanionFileRequests } from '../platforms/harmony/companion/src/main/ets/CompanionFileRequests';
+import { CompanionFileManifest, decodeFileRequest } from '../platforms/harmony/companion/src/main/ets/CompanionFileWire';
+import { CompanionFileReply, encodeFileReply } from '../platforms/harmony/companion/src/main/ets/CompanionFileReply';
+test('sender persists requests, waits for consent, resumes missing chunks and completes', async () => {
+  let raw: string | null = null, id = 0;
+  const store = { async read() { return raw; }, async compareExchange(expected: string | null, desired: string) { if (expected !== raw) return false; raw = desired; return true; } };
+  const crypto = { async sha256(bytes: Uint8Array) { return new Uint8Array(createHash('sha256').update(bytes).digest()); }, async messageId() { return 'request-' + (++id); } };
+  const bytes = Uint8Array.from({ length: 65539 }, (_, i) => i % 251);
+  const chunks = [bytes.slice(0, 65536), bytes.slice(65536)];
+  const hash = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
+  const manifest = new CompanionFileManifest(); manifest.transfer_id = 'file'; manifest.size = bytes.length; manifest.sha256 = hash(bytes); manifest.chunk_hashes = chunks.map(hash);
+  const queue = () => new CompanionFileRequests('app', 'phone', store, crypto);
+  let corrupt = false;
+  const sender = () => new CompanionFileSender(queue(), 'watch', manifest, { async readChunk(index) { return corrupt ? new Uint8Array(chunks[index].length) : chunks[index]; } }, crypto);
+  async function reply(phase: string, missing?: number[]) {
+    const requests = queue(), pending = (await requests.next('watch'))!;
+    const request = decodeFileRequest(pending.payload), value = new CompanionFileReply();
+    value.request_sha256 = pending.digest; value.value.phase = phase;
+    if (missing !== undefined) value.value.missing = missing;
+    await requests.receiveAuthenticated('watch', pending.messageId, encodeFileReply(value, request));
+    return request;
+  }
+  expect(await sender().step()).toBe('queued');
+  const original = (await queue().next('watch'))!.messageId;
+  expect(await sender().step()).toBe('awaiting_reply');
+  expect((await queue().next('watch'))!.messageId).toBe(original);
+  expect((await reply('offered')).method).toBe('offer');
+  expect(await sender().step()).toBe('waiting_consent');
+  expect((await reply('accepted')).method).toBe('status');
+  await sender().step(); expect((await reply('accepted', [1])).method).toBe('missing');
+  corrupt = true; await expect(sender().step()).rejects.toThrow('hash changed');
+  expect((await queue().completed('watch')).length).toBe(1);
+  corrupt = false; await sender().step();
+  const chunk = await reply('accepted'); expect(chunk.index).toBe(1); expect(chunk.data).toEqual(chunks[1]);
+  await sender().step(); await reply('accepted', []);
+  await sender().step(); expect((await reply('complete')).method).toBe('finish');
+  expect(await sender().step()).toBe('complete');
+  expect(await queue().next('watch')).toBeNull();
+});

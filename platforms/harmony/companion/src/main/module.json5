@@ -1,0 +1,3 @@
+{
+  module: { name: 'companion', type: 'har', deviceTypes: ['phone', 'wearable'] }
+}

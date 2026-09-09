@@ -1,0 +1,8 @@
+<resources>
+    <string name="pod_accessibility_mixed">Partially checked</string>
+    <string name="pod_accessibility_checked">Checked</string>
+    <string name="pod_accessibility_unchecked">Not checked</string>
+    <string name="pod_accessibility_expanded">Expanded</string>
+    <string name="pod_accessibility_collapsed">Collapsed</string>
+    <string name="pod_accessibility_busy">Busy</string>
+</resources>

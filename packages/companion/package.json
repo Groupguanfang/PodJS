@@ -1,0 +1,7 @@
+{
+  "name": "@podjs/companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./state": "./src/state.ts", "./cas-state-database": "./src/cas-state-database.ts" }
+}

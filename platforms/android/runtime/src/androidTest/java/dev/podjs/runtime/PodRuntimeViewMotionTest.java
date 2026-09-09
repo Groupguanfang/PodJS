@@ -64,4 +64,11 @@ public final class PodRuntimeViewMotionTest {
             event.recycle();
         }
     }
+
+    @Test
+    public void testOppoMarkerMatchesManufacturerAndFingerprintWithoutFalsePositives() {
+        assertTrue(PodRuntimeView.isOppoMarker("OPPO"));
+        assertTrue(PodRuntimeView.isOppoMarker("oplus_watch_1.0/release"));
+        assertTrue(!PodRuntimeView.isOppoMarker("samsung/wearable"));
+    }
 }

@@ -1,1 +1,11 @@
-{ "string": [{ "name": "module_desc", "value": "PodJS watch" }, { "name": "EntryAbility_desc", "value": "PodJS watch" }, { "name": "EntryAbility_label", "value": "PodJS" }] }
+{ "string": [
+  { "name": "module_desc", "value": "PodJS watch" },
+  { "name": "EntryAbility_desc", "value": "PodJS watch" },
+  { "name": "EntryAbility_label", "value": "PodJS" },
+  { "name": "pod_a11y_checked", "value": "Checked" },
+  { "name": "pod_a11y_unchecked", "value": "Not checked" },
+  { "name": "pod_a11y_mixed", "value": "Partially checked" },
+  { "name": "pod_a11y_expanded", "value": "Expanded" },
+  { "name": "pod_a11y_collapsed", "value": "Collapsed" },
+  { "name": "pod_a11y_busy", "value": "Busy" }
+] }

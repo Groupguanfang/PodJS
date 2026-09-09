@@ -7,6 +7,7 @@
   author: '',
   license: '',
   dependencies: {
+    '@podjs/companion': 'file:../companion',
     'libpodjs_harmony.so': 'file:./src/main/cpp/types/libpodjs_harmony'
   }
 }

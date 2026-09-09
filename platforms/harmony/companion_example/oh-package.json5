@@ -1,0 +1,1 @@
+{ modelVersion: '5.0.0', name: 'podjs_companion_example', version: '0.1.0', description: 'PodJS Harmony phone companion example', main: '', author: '', license: '', dependencies: { '@podjs/companion': 'file:../companion' } }

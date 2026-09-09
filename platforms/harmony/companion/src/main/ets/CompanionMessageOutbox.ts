@@ -1,0 +1,145 @@
+import { CompanionMessageEnvelope, encodeMessageEnvelope } from './CompanionMessageWire';
+
+/** Dedicated message namespace: MUST NOT share a state-sync snapshot key.
+ * Successful CAS means the complete replacement has been durably committed. */
+export interface CompanionMessageStore {
+  read(): Promise<string | null>;
+  compareExchange(expected: string | null, desired: string): Promise<boolean>;
+}
+export interface CompanionMessageDigest { sha256(bytes: Uint8Array): Promise<Uint8Array>; }
+class StoredMessage {
+  peer: string = '';
+  id: string = '';
+  expires: number = 0;
+  high: boolean = false;
+  payload: string = '';
+  digest: string = '';
+}
+class OutboxSnapshot {
+  schema: number = 1;
+  app: string = '';
+  local: string = '';
+  messages: StoredMessage[] = [];
+}
+export class CompanionOutgoingMessage {
+  peer: string;
+  messageId: string;
+  envelope: CompanionMessageEnvelope;
+  digest: Uint8Array;
+  constructor(record: StoredMessage) {
+    this.peer = record.peer; this.messageId = record.id;
+    this.envelope = new CompanionMessageEnvelope(record.expires, record.high, unhex(record.payload));
+    this.digest = unhex(record.digest);
+  }
+}
+function identity(value: string): void {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(value)) throw new Error('invalid message identity');
+}
+function time(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error('invalid message time');
+}
+function hex(bytes: Uint8Array): string {
+  let value = ''; for (const byte of bytes) value += byte.toString(16).padStart(2, '0'); return value;
+}
+function unhex(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(value.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+/** Durable at-least-once outbox; queue reads do not mark sent. Each operation
+ * rereads storage; competing writers fail explicitly instead of losing edits. */
+export class CompanionMessageOutbox {
+  private app: string;
+  private local: string;
+  private store: CompanionMessageStore;
+  private crypto: CompanionMessageDigest;
+  private tail: Promise<void> = Promise.resolve();
+  constructor(app: string, local: string, store: CompanionMessageStore, crypto: CompanionMessageDigest) {
+    identity(app); identity(local); this.app = app; this.local = local; this.store = store; this.crypto = crypto;
+  }
+  private async load(raw: string | null): Promise<OutboxSnapshot> {
+    if (raw === null) { const fresh = new OutboxSnapshot(); fresh.app = this.app; fresh.local = this.local; return fresh; }
+    if (raw.length > 18000000) throw new Error('message snapshot too large');
+    const snapshot = JSON.parse(raw) as OutboxSnapshot;
+    if (!snapshot || snapshot.schema !== 1 || snapshot.app !== this.app || snapshot.local !== this.local ||
+      !Array.isArray(snapshot.messages) || snapshot.messages.length > 1000) throw new Error('invalid message snapshot');
+    const keys: string[] = []; let cost = 0;
+    for (const message of snapshot.messages) {
+      if (!message) throw new Error('invalid stored message');
+      identity(message.peer); identity(message.id); time(message.expires);
+      if (message.peer === this.local || typeof message.high !== 'boolean' || typeof message.payload !== 'string' ||
+        message.payload.length > 524288 || message.payload.length % 2 !== 0 || !/^[0-9a-f]*$/.test(message.payload) ||
+        typeof message.digest !== 'string' || !/^[0-9a-f]{64}$/.test(message.digest)) throw new Error('invalid stored message');
+      const key = message.peer + '/' + message.id;
+      if (keys.includes(key)) throw new Error('duplicate stored message'); keys.push(key);
+      cost += message.payload.length / 2 + 1024;
+      if (cost > 8388608) throw new Error('message queue too large');
+      const bytes = encodeMessageEnvelope(new CompanionMessageEnvelope(message.expires, message.high, unhex(message.payload)));
+      if (hex(await this.crypto.sha256(bytes)) !== message.digest) throw new Error('stored message digest mismatch');
+    }
+    return snapshot;
+  }
+  matchesIdentity(app: string, local: string): boolean { return this.app === app && this.local === local; }
+  private run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(operation); this.tail = result.then(() => {}, () => {}); return result;
+  }
+  private async save(raw: string | null, snapshot: OutboxSnapshot): Promise<void> {
+    if (!await this.store.compareExchange(raw, JSON.stringify(snapshot))) throw new Error('message storage conflict');
+  }
+  enqueue(peer: string, messageId: string, envelope: CompanionMessageEnvelope, now: number): Promise<void> {
+    identity(peer); identity(messageId); time(now);
+    if (peer === this.local) throw new Error('invalid message peer');
+    const stable = new CompanionMessageEnvelope(envelope.expiresAt, envelope.highPriority, envelope.payload);
+    if (stable.expiresAt <= now) throw new Error('message already expired');
+    return this.run(async () => {
+      const raw = await this.store.read(), snapshot = await this.load(raw);
+      const digest = await this.crypto.sha256(encodeMessageEnvelope(stable));
+      if (digest.length !== 32) throw new Error('invalid message digest');
+      const record = new StoredMessage(); record.peer = peer; record.id = messageId; record.expires = stable.expiresAt;
+      record.high = stable.highPriority; record.payload = hex(stable.payload); record.digest = hex(digest);
+      // Reject ID changes even if the old row has expired but has not been purged.
+      const prior = snapshot.messages.find((item: StoredMessage) => item.peer === peer && item.id === messageId);
+      if (prior !== undefined) {
+        if (prior.digest !== record.digest) throw new Error('message ID content mismatch');
+        return;
+      }
+      snapshot.messages = snapshot.messages.filter((item: StoredMessage) => item.expires > now);
+      let cost = stable.payload.length + 1024;
+      for (const item of snapshot.messages) cost += item.payload.length / 2 + 1024;
+      if (snapshot.messages.length >= 1000 || cost > 8388608) throw new Error('message queue full');
+      snapshot.messages.push(record); await this.save(raw, snapshot);
+    });
+  }
+  pending(peer: string, now: number, limit: number): Promise<CompanionOutgoingMessage[]> {
+    identity(peer); time(now);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('invalid message batch limit');
+    return this.run(async () => {
+      const snapshot = await this.load(await this.store.read());
+      const rows = snapshot.messages.filter((item: StoredMessage) => item.peer === peer && item.expires > now);
+      // Stable sort preserves FIFO among equal priorities.
+      rows.sort((a: StoredMessage, b: StoredMessage) => Number(b.high) - Number(a.high));
+      return rows.slice(0, limit).map((item: StoredMessage) => new CompanionOutgoingMessage(item));
+    });
+  }
+  acknowledgeAuthenticated(peer: string, messageId: string, digest: Uint8Array): Promise<boolean> {
+    identity(peer); identity(messageId);
+    if (digest.length !== 32) throw new Error('invalid message ACK digest');
+    const expected = hex(digest);
+    return this.run(async () => {
+      const raw = await this.store.read(), snapshot = await this.load(raw);
+      const index = snapshot.messages.findIndex((item: StoredMessage) => item.peer === peer && item.id === messageId);
+      if (index < 0) return false;
+      if (snapshot.messages[index].digest !== expected) throw new Error('message ACK content mismatch');
+      snapshot.messages.splice(index, 1); await this.save(raw, snapshot); return true;
+    });
+  }
+  expire(now: number): Promise<number> {
+    time(now);
+    return this.run(async () => {
+      const raw = await this.store.read(), snapshot = await this.load(raw), before = snapshot.messages.length;
+      snapshot.messages = snapshot.messages.filter((item: StoredMessage) => item.expires > now);
+      const removed = before - snapshot.messages.length;
+      if (removed > 0) await this.save(raw, snapshot); return removed;
+    });
+  }
+}

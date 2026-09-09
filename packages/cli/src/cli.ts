@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { POD_TARGETS, type PodTargetProfile } from "../../framework/src/targets.ts";
+import { resolvePodProject, type ResolvedPodProject } from "./project.ts";
+import { buildBackground } from "./background-build.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 type Target = PodTargetProfile["id"];
@@ -66,21 +68,31 @@ function doctor(): void {
   if (revision !== expected) process.exitCode = 1;
 }
 
-function build(target: Target, app = "apps/gallery/src/main.tsx"): void {
+async function build(target: Target, project?: ResolvedPodProject): Promise<ResolvedPodProject | undefined> {
   const profile = POD_TARGETS[target];
+  if (project) {
+    const unsupported = project.config.capabilities.filter(capability => !profile.capabilities.includes(capability as never));
+    if (unsupported.length) fail(`project requires capabilities unavailable on ${target}: ${unsupported.join(", ")}`);
+  }
   const density = target === "android-watch" || target === "wearos-watch" ? 2 : 2;
-  const out = join(ROOT, "dist", target);
+  const out = project ? join(project.output, target) : join(ROOT, "dist", target);
+  const app = project?.entry ?? resolve(ROOT, "apps/gallery/src/main.tsx");
   run([
-    "bun", "vendor/pocketjs/tools/build.ts", resolve(ROOT, app),
+    "bun", "vendor/pocketjs/tools/build.ts", app,
     "--framework=solid", `--density=${density}`, "--hz=60",
-    `--font-regular=${join(ROOT, "assets/fonts/NotoSansCJKSC-Regular-subset.ttf")}`,
-    `--font-bold=${join(ROOT, "assets/fonts/NotoSansCJKSC-Bold-subset.ttf")}`,
-    `--outdir=${out}`, `--project-root=${ROOT}`,
+    ...(project?.extraChars ? [`--extra-chars=${project.extraChars}`] : []),
+    `--font-regular=${project?.fontRegular ?? join(ROOT, "assets/fonts/NotoSansCJKSC-Regular-subset.ttf")}`,
+    `--font-bold=${project?.fontBold ?? join(ROOT, "assets/fonts/NotoSansCJKSC-Bold-subset.ttf")}`,
+    `--outdir=${out}`, `--project-root=${project?.root ?? ROOT}`,
   ]);
   const output = basename(app).replace(/\.tsx?$/, "");
   const js = join(out, `${output}.js`);
   const pak = join(out, `${output}.pak`);
   if (!existsSync(js) || !existsSync(pak)) fail(`PocketJS did not produce ${js} and ${pak}`);
+  if (output !== "main") {
+    copyFileSync(js, join(out, "main.js"));
+    copyFileSync(pak, join(out, "main.pak"));
+  }
   const manifest = {
     schema: 1,
     target: profile.id,
@@ -88,25 +100,28 @@ function build(target: Target, app = "apps/gallery/src/main.tsx"): void {
     logicalViewport: profile.logicalViewport,
     renderer: profile.renderer,
     capabilities: profile.capabilities,
-    pocketjsRevision: "0a90bf904d835210e52a11ed275a86d0040b5086",
+    pocketjsRevision: capture(["git", "-C", join(ROOT, "vendor/pocketjs"), "rev-parse", "HEAD"]) ?? fail("cannot resolve PocketJS revision"),
     bundleHash: fnv1a64(readFileSync(js)),
     pakHash: fnv1a64(readFileSync(pak)),
+    background: await buildBackground(project?.background ?? {}, out),
+    backgroundServices: project?.config.backgroundServices ?? [],
   };
   writeFileSync(join(out, "pod.manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`pod: built ${profile.id} -> ${out}`);
+  return project;
 }
 
 function test(): void {
-  run(["bun", "test", "packages/framework/tests/watch.test.ts", "tests/targets.test.ts"]);
-  run(["cargo", "test", "--workspace"]);
+  run(["bun", "run", "test"]);
 }
 
-function packageTarget(target: Target): void {
-  build(target);
+async function packageTarget(target: Target, project?: ResolvedPodProject): Promise<void> {
+  await build(target, project);
   if (target === "android-watch" || target === "wearos-watch") {
     run(["bash", "scripts/build-android-runtime.sh"]);
     const app = target === "android-watch" ? ":androidApp" : ":wearApp";
-    run(["./gradlew", `${app}:assembleDebug`, `${app}:bundleRelease`, ":runtime:assembleRelease"], join(ROOT, "platforms/android"));
+    const gradleArgs = project ? [`-PpodDistDir=${join(project.output, target)}`, `-PpodAppId=${project.config.appId}`, `-PpodAppName=${project.config.name}`, `-PpodVersionName=${project.config.versionName}`, `-PpodVersionCode=${project.config.versionCode}`] : [];
+    run(["./gradlew", ...gradleArgs, `${app}:assembleDebug`, `${app}:bundleRelease`, ":runtime:assembleRelease"], join(ROOT, "platforms/android"));
   } else if (target === "watchos-watch") {
     if (!capture(["xcodebuild", "-version"])) fail("watchOS packaging must run on the configured Mac");
     run([
@@ -121,10 +136,21 @@ function packageTarget(target: Target): void {
 }
 
 const [command = "doctor", ...args] = process.argv.slice(2);
+const projectArg = args.find(value => value.startsWith("--project="))?.slice("--project=".length);
+let project: ResolvedPodProject | undefined;
+if (projectArg) {
+  try {
+    project = resolvePodProject(projectArg, POD_TARGETS, {
+      fontRegular: join(ROOT, "assets/fonts/NotoSansCJKSC-Regular-subset.ttf"),
+      fontBold: join(ROOT, "assets/fonts/NotoSansCJKSC-Bold-subset.ttf"),
+      outputRoot: join(ROOT, "dist/projects"),
+    });
+  } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+}
 switch (command) {
   case "doctor": doctor(); break;
-  case "build": build(targetArg(args)); break;
+  case "build": await build(targetArg(args), project); break;
   case "test": test(); break;
-  case "package": packageTarget(targetArg(args)); break;
-  default: fail("usage: pod <doctor|build|test|package> [--target=<watch target>]");
+  case "package": await packageTarget(targetArg(args), project); break;
+  default: fail("usage: pod <doctor|build|test|package> [--target=<watch target>] [--project=<absolute directory or pod.config.json>]");
 }

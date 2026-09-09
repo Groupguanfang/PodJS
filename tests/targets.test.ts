@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { POD_HOST_ABI, POD_TARGETS } from "../packages/framework/src/targets.ts";
+import { POD_HOST_ABI, POD_MIN_HOST_ABI, POD_TARGETS } from "../packages/framework/src/targets.ts";
 
 describe("PodJS target profiles", () => {
   test("pin one ABI and one logical viewport", () => {
+    expect(POD_HOST_ABI).toBe(2);
+    expect(POD_MIN_HOST_ABI).toBe(1);
     for (const target of Object.values(POD_TARGETS)) {
       expect(target.hostAbi).toBe(POD_HOST_ABI);
       expect(target.logicalViewport).toEqual({ width: 240, height: 240 });

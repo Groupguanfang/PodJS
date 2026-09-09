@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test APK only. Exposes deterministic synthetic fixtures, never user files. -->
+        <provider android:name="dev.podjs.companion.example.DocumentFixtureProvider"
+            android:authorities="dev.podjs.companion.example.test.documents" android:exported="true" />
+    </application>
+</manifest>

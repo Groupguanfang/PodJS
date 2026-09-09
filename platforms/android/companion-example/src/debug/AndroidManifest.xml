@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Direct fixture access without a system picker is instrumentation-only. -->
+    <queries>
+        <provider android:authorities="dev.podjs.companion.example.test.documents" />
+    </queries>
+</manifest>

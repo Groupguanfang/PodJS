@@ -24,6 +24,7 @@ private struct PodJSWatchRootView: View {
             if let host {
                 ZStack {
                     SpriteView(scene: host.scene, preferredFramesPerSecond: 60)
+                        .accessibilityHidden(true)
                         .allowsHitTesting(false)
                         .focusable(false)
                     TouchScrollBridge { pointDelta in
@@ -36,7 +37,9 @@ private struct PodJSWatchRootView: View {
                             recordDiagnostic(message)
                         }
                     }
+                    .accessibilityHidden(true)
                     Color.clear
+                        .accessibilityHidden(true)
                         .accessibilityIdentifier("podjs-crown-status")
                         .frame(width: 1, height: 1)
                         .focusable(true, interactions: .edit)
@@ -62,6 +65,7 @@ private struct PodJSWatchRootView: View {
                             isContinuous: true,
                             isHapticFeedbackEnabled: false
                         )
+                    PodAccessibilityOverlay(host: host)
                 }
                 .ignoresSafeArea()
                 ._statusBarHidden(true)

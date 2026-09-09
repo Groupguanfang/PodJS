@@ -1,0 +1,9 @@
+{
+  modelVersion: '5.0.0',
+  name: '@podjs/companion',
+  version: '0.1.0',
+  description: 'PodJS companion SDK (state layer)',
+  main: 'Index.ets',
+  license: 'MIT',
+  dependencies: { 'libpodjs_companion.so': 'file:./src/main/cpp/types/libpodjs_companion' }
+}

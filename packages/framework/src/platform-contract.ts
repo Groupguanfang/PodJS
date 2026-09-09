@@ -1,0 +1,24 @@
+/** Declaring a method does not grant it: the native host must advertise its capability. */
+import type { PodCapabilityId } from "./targets.ts";
+export const platformMethods: Readonly<Record<string, PodCapabilityId>> = Object.freeze({
+  "sync.state.get": "companion.sync.state",
+  "sync.state.set": "companion.sync.state",
+  "sync.state.delete": "companion.sync.state",
+  "sync.state.synchronize": "companion.sync.state",
+  "sync.messages.send": "companion.sync.message",
+  "sync.messages.ack": "companion.sync.message",
+  "sync.files.offer": "companion.sync.file",
+  "sync.files.accept": "companion.sync.file",
+  "sync.files.cancel": "companion.sync.file",
+  "sync.files.status": "companion.sync.file",
+  "notifications.status": "notification.local",
+  "notifications.requestPermission": "notification.local",
+  "notifications.schedule": "notification.local",
+  "notifications.cancel": "notification.local",
+  "notifications.listPending": "notification.local",
+  "notifications.registerRemote": "notification.remote",
+  "notifications.unregisterRemote": "notification.remote",
+  "background.register": "background.scheduled",
+  "background.cancel": "background.scheduled",
+  "background.status": "background.scheduled",
+});

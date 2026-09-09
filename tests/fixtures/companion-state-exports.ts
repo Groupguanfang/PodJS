@@ -1,0 +1,16 @@
+export { CompanionState } from "../../packages/companion/src/state";
+export { CasStateDatabase } from "../../packages/companion/src/cas-state-database";
+export { CompanionState as HarmonyCompanionState } from "../../platforms/harmony/entry/src/main/ets/CompanionState";
+export { encodeStateAck, decodeStateAck } from "../../platforms/harmony/companion/src/main/ets/CompanionStateAck";
+export { CompanionMessageOutbox } from '../../platforms/harmony/companion/src/main/ets/CompanionMessageOutbox';
+export { CompanionMessageEnvelope } from '../../platforms/harmony/companion/src/main/ets/CompanionMessageWire';
+export { CompanionMessageInbox } from '../../platforms/harmony/companion/src/main/ets/CompanionMessageInbox';
+export { encodeMessageEnvelope } from '../../platforms/harmony/companion/src/main/ets/CompanionMessageWire';
+export { CompanionFileRequests } from '../../platforms/harmony/companion/src/main/ets/CompanionFileRequests';
+export { CompanionIncomingFiles } from '../../platforms/harmony/companion/src/main/ets/CompanionIncomingFiles';
+export { CompanionIncomingNativePort } from '../../platforms/harmony/companion/src/main/ets/CompanionIncomingNativePort';
+export { CompanionFileSender } from '../../platforms/harmony/companion/src/main/ets/CompanionFileSender';
+export { CompanionOutgoingFiles, CompanionStoredFileSource } from '../../platforms/harmony/companion/src/main/ets/CompanionOutgoingFiles';
+export { importCompanionFile } from '../../platforms/harmony/companion/src/main/ets/CompanionFileImporter';
+export { decodeFileRequest } from '../../platforms/harmony/companion/src/main/ets/CompanionFileWire';
+export { CompanionFileRequest } from '../../platforms/harmony/companion/src/main/ets/CompanionFileWire';

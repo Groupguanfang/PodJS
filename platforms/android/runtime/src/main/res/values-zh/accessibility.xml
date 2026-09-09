@@ -1,0 +1,8 @@
+<resources>
+    <string name="pod_accessibility_mixed">部分选中</string>
+    <string name="pod_accessibility_checked">已选中</string>
+    <string name="pod_accessibility_unchecked">未选中</string>
+    <string name="pod_accessibility_expanded">已展开</string>
+    <string name="pod_accessibility_collapsed">已收起</string>
+    <string name="pod_accessibility_busy">正忙</string>
+</resources>

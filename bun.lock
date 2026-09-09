@@ -22,6 +22,10 @@
       "name": "@podjs/cli",
       "version": "0.1.0",
     },
+    "packages/companion": {
+      "name": "@podjs/companion",
+      "version": "0.1.0",
+    },
     "packages/framework": {
       "name": "@podjs/framework",
       "version": "0.1.0",
@@ -189,6 +193,8 @@
     "@parcel/watcher-win32-x64": ["@parcel/watcher-win32-x64@2.5.1", "", { "os": "win32", "cpu": "x64" }, "sha512-9lHBdJITeNR++EvSQVUcaZoWupyHfXe1jZvGZ06O/5MflPcuPLtEphScIBL+AiCWBO46tDSHzWyD0uDmmZqsgA=="],
 
     "@podjs/cli": ["@podjs/cli@workspace:packages/cli"],
+
+    "@podjs/companion": ["@podjs/companion@workspace:packages/companion"],
 
     "@podjs/framework": ["@podjs/framework@workspace:packages/framework"],
 

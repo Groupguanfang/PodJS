@@ -3,8 +3,11 @@ import Foundation
 import SpriteKit
 import WatchKit
 import CPodJS
+import Combine
 
-public final class PodWatchHost {
+public final class PodWatchHost: ObservableObject {
+    @Published public private(set) var semanticNodes: [PodSemanticNode] = []
+    private var semanticHash: UInt64 = 0
     public let scene: PodScene
     private var runtime: OpaquePointer?
     private let logicalWidth: CGFloat
@@ -41,6 +44,7 @@ public final class PodWatchHost {
         try checked(jb.withUnsafeBytes { ptr in "app:///main.js".withCString { pod_runtime_eval_bundle(runtime, ptr.bindMemory(to: UInt8.self).baseAddress, ptr.count, $0) } })
         scene.scaleMode = .aspectFit
         scene.backgroundColor = .black
+        try checked(pod_runtime_set_accessibility_enabled(runtime, 1))
     }
     deinit { if let runtime { pod_runtime_destroy(runtime) } }
     public func addCrownDegrees(_ degrees: Double) { crownRemainder += degrees * 1000 }
@@ -69,6 +73,25 @@ public final class PodWatchHost {
         return logical
     }
     public func setLifecycle(_ state: UInt32) throws { try checked(pod_runtime_set_lifecycle(runtime, state)) }
+    public func performAccessibilityAction(_ id: Int32, action: UInt8) {
+        guard semanticNodes.contains(where: { $0.id == id && $0.permits(action) }) else { return }
+        _ = pod_runtime_accessibility_action(runtime, id, semanticHash, Int32(action))
+    }
+    private func updateSemantics() throws {
+        var snapshot = PodAccessibilitySnapshot()
+        try checked(pod_runtime_accessibility_snapshot(runtime, &snapshot))
+        guard snapshot.changed != 0, let bytes = snapshot.json else { return }
+        do {
+            let decoded = try JSONDecoder().decode(PodSemanticSnapshot.self, from: Data(bytes: bytes, count: snapshot.byte_length))
+            guard decoded.schema == 1 else { throw HostError.runtime("Unsupported semantic schema") }
+            semanticHash = snapshot.content_hash
+            semanticNodes = decoded.nodes
+        } catch {
+            // Never leave outdated operable elements after a failed projection.
+            semanticNodes = []
+            throw error
+        }
+    }
     /// Advance one deterministic guest turn. A SpriteKit texture is submitted
     /// only when the canonical DrawList/resource hash changes.
     public func frame() throws {
@@ -92,6 +115,8 @@ public final class PodWatchHost {
 
         var snapshot = PodDrawList()
         try checked(pod_runtime_snapshot(runtime, &snapshot))
+        // A label/action change can leave the paint hash unchanged.
+        try updateSemantics()
         guard snapshot.changed != 0 else { return }
 
         let scale = Self.renderScale

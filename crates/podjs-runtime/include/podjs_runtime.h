@@ -8,12 +8,54 @@
 extern "C" {
 #endif
 
-#define PODJS_RUNTIME_ABI_VERSION 1
+#define PODJS_RUNTIME_ABI_VERSION 2
+#define PODJS_RUNTIME_MIN_ABI_VERSION 1
+/* ABI 2 adds host-only sync handles without changing ABI 1 struct layouts.
+ * New runtimes accept host configs 1..2. Packages must request 1..host_abi;
+ * the guest sees its requested ABI while the receipt reports both versions. */
 #define PODJS_DEFAULT_LOGICAL_WIDTH 240
 #define PODJS_DEFAULT_LOGICAL_HEIGHT 240
 #define PODJS_MAX_TOUCHES 8
 
 typedef struct PodRuntime PodRuntime;
+typedef struct PodSyncFiles PodSyncFiles;
+typedef struct PodSyncSession PodSyncSession;
+typedef struct PodBackgroundRun PodBackgroundRun;
+/* One-shot headless task; config JSON app_id/task_id/source/budget_ms/memory_bytes,
+ * optional payload (JSON, at most 64 KiB when serialized) and allowed_methods.
+ * Optional host-owned absolute kv_root enables native kv.get/set/delete/keys
+ * dispatch instead of polling. All allowed methods must then be KV methods.
+ * Host verifies bundle/manifest and method authorization first. Execute on worker;
+ * poll/reply/cancel may be concurrent. Close only after all callers return.
+ * Execute result JSON is borrowed until close. */
+PodBackgroundRun *pod_background_open(const uint8_t *config, size_t length);
+const char *pod_background_execute(const PodBackgroundRun *handle);
+void pod_background_cancel(const PodBackgroundRun *handle);
+/* One serialized poll consumer. Borrowed UTF-8 JSON until next poll/close; NULL
+ * means no request. Envelope: id/appId/taskId/method/args/remainingMs.
+ * Dispatch only authorized bounded IO; remainingMs is a budget, not wall time. */
+const char *pod_background_poll(const PodBackgroundRun *handle);
+/* Reply JSON {id,ok:true,value} or {id,ok:false,code}, max 70 KiB envelope.
+ * Returns 0 accepted, -1 invalid, -2 unknown/finished. Never retry an accepted
+ * response. Host must cancel IO on execution exit; committed writes remain. */
+int32_t pod_background_reply(const PodBackgroundRun *handle, const uint8_t *bytes, size_t length);
+void pod_background_close(PodBackgroundRun *handle);
+/* Host-only authentication. Commands and close must be serialized. Host supplies
+ * authenticated pairing key, fresh challenges and manifest-authorized channels.
+ * Command response is borrowed until the next command/close. Never guest-expose. */
+PodSyncSession *pod_sync_session_open(const uint8_t *config, size_t length);
+const char *pod_sync_session_command(PodSyncSession *handle, const uint8_t *bytes, size_t length);
+void pod_sync_session_close(PodSyncSession *handle);
+/* Optional host-only file receiver. Private per-app/per-peer root, serialized
+ * IO worker access, authenticated/authorized peers. Command limit: 96 KiB.
+ * JSON methods: offer(manifest), missing(transfer_id), chunk(transfer_id,index,
+ * data_base64), finish(transfer_id), cancel(transfer_id). Manifest fields use
+ * snake_case. Reply {ok,value} or {ok:false,code,message}; valid until next
+ * command/close. Open returns NULL on error (pod_runtime_last_error).
+ */
+PodSyncFiles *pod_sync_files_open(const char *private_root);
+const char *pod_sync_files_command(PodSyncFiles *handle, const uint8_t *bytes, size_t length);
+void pod_sync_files_close(PodSyncFiles *handle);
 
 typedef enum PodLifecycleState {
   POD_LIFECYCLE_ACTIVE = 0,
@@ -67,6 +109,14 @@ typedef struct PodDrawList {
   int32_t changed;
 } PodDrawList;
 
+typedef struct PodAccessibilitySnapshot {
+  const uint8_t *json;
+  size_t byte_length;
+  uint64_t content_hash;
+  uint64_t frame_number;
+  int32_t changed;
+} PodAccessibilitySnapshot;
+
 typedef struct PodTextureView {
   int32_t handle;
   uint64_t revision;
@@ -93,6 +143,33 @@ typedef struct PodFontView {
 } PodFontView;
 
 uint32_t pod_runtime_abi_version(void);
+typedef struct PodAccessibilityText {
+  const uint8_t *bytes;
+  size_t byte_length;
+} PodAccessibilityText;
+typedef struct PodAccessibilityTree {
+  size_t node_count;
+  uint64_t content_hash;
+  uint64_t frame_number;
+} PodAccessibilityTree;
+typedef struct PodAccessibilityNode {
+  int32_t id, parent_id;
+  /* text=0, button=1, image=2, header=3, link=4, checkbox=5, switch=6,
+   * adjustable=7, list=8, listitem=9. */
+  int32_t role;
+  uint16_t state;
+  uint8_t actions;
+  int32_t left, top, right, bottom;
+  PodAccessibilityText label, value, hint;
+} PodAccessibilityNode;
+/* Allocation-free committed tree reads. These do not consume JSON's changed
+ * cursor: each native consumer compares its own hash. index is document order.
+ * Text is length-delimited UTF-8, NOT NUL-terminated; null bytes means absent,
+ * non-null plus length 0 means explicitly empty. Borrowed text remains valid
+ * until the next pod_runtime_snapshot, set_accessibility_enabled or destruction.
+ * Serialize these reads with all runtime mutations; copy text before unlocking. */
+int32_t pod_runtime_accessibility_tree(PodRuntime *runtime, PodAccessibilityTree *out);
+int32_t pod_runtime_accessibility_node(PodRuntime *runtime, size_t index, PodAccessibilityNode *out);
 const char *pod_runtime_last_error(void);
 PodRuntime *pod_runtime_create(const PodRuntimeConfig *config);
 uint32_t pod_runtime_logical_width(const PodRuntime *runtime);
@@ -106,6 +183,21 @@ int32_t pod_runtime_set_theme(PodRuntime *runtime, const char *theme);
 int32_t pod_runtime_post_event(PodRuntime *runtime, const char *json_object);
 int32_t pod_runtime_frame(PodRuntime *runtime, const PodInputFrame *input);
 int32_t pod_runtime_snapshot(PodRuntime *runtime, PodDrawList *out);
+/* Opt in to primary-output semantics. Collection is off by default. */
+int32_t pod_runtime_set_accessibility_enabled(PodRuntime *runtime, int32_t enabled);
+/* Read the last draw-committed semantic tree without drawing or applying pending
+ * mutations. UTF-8 JSON schema 1; bytes remain valid until the next query or
+ * runtime destruction. changed reports a semantic-content hash change, not a
+ * paint/frame change. bounds are clipped logical coordinates, ids retain their
+ * native generation, parentId 0 denotes the virtual host root.
+ * state: disabled=1, selected=2, checked=4, mixed=8, expanded=16, busy=32,
+ * hasChecked=64, hasExpanded=128. actions: activate=1, increment=2, decrement=4. */
+int32_t pod_runtime_accessibility_snapshot(PodRuntime *runtime, PodAccessibilitySnapshot *out);
+/* Queue an action from this content_hash: 1 activate, 2 increment, 4 decrement.
+ * Rejects stale snapshots, detached/deleted nodes and revoked actions.
+ * Success means queued for guest delivery, not callback completion. */
+int32_t pod_runtime_accessibility_action(PodRuntime *runtime, int32_t node_id,
+                                       uint64_t content_hash, int32_t action);
 /* Rasterize the current DrawList to tightly packed RGBA8. `scale` is 1..4;
  * length must equal logical_width * scale * logical_height * scale * 4. */
 int32_t pod_runtime_render_rgba(PodRuntime *runtime, uint32_t scale,
@@ -114,7 +206,16 @@ int32_t pod_runtime_render_rgba(PodRuntime *runtime, uint32_t scale,
  * complete frame; later calls repaint only damage regions when possible. */
 int32_t pod_runtime_render_rgba_incremental(PodRuntime *runtime, uint32_t scale,
                                             uint8_t *pixels, size_t length);
+/* Alpha-composited incremental RGBA8. The buffer is cleared transparent and
+ * stores premultiplied RGB with source-over alpha. Other raster APIs retain
+ * their opaque-black behavior. */
+int32_t pod_runtime_render_rgba_transparent_incremental(
+    PodRuntime *runtime, uint32_t scale, uint8_t *pixels, size_t length);
 int32_t pod_runtime_texture(PodRuntime *runtime, uint32_t slot, PodTextureView *out);
+/* Resolve a generation-tagged live texture handle. Returns 1 for a stale or
+ * missing handle; unlike pod_runtime_texture this does not enumerate slots. */
+int32_t pod_runtime_texture_for_handle(PodRuntime *runtime, int32_t handle,
+                                       PodTextureView *out);
 int32_t pod_runtime_font(PodRuntime *runtime, uint32_t slot, PodFontView *out);
 
 /* Native host effects and networking. Returned strings are owned by the

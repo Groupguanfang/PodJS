@@ -1,0 +1,106 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import type { PodTargetProfile } from "../../framework/src/targets.ts";
+
+export interface PodProjectResources {
+  fontRegular?: string;
+  fontBold?: string;
+  extraCharsFile?: string;
+}
+
+export interface PodProjectConfig {
+  entry: string;
+  appId: string;
+  versionName: string;
+  versionCode: number;
+  name: string;
+  capabilities: string[];
+  background?: Record<string, string>;
+  backgroundServices?: string[];
+  resources?: PodProjectResources;
+}
+
+export interface ResolvedPodProject {
+  config: PodProjectConfig;
+  root: string;
+  configPath: string;
+  entry: string;
+  output: string;
+  fontRegular: string;
+  fontBold: string;
+  extraChars: string;
+  background: Record<string, string>;
+}
+
+const APP_ID = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
+
+function invalid(message: string): never {
+  throw new Error(`invalid pod.config.json: ${message}`);
+}
+
+function stringField(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") invalid(`${field} must be a non-empty string`);
+  return value;
+}
+
+export function resolvePodProject(spec: string, targets: Record<string, PodTargetProfile>, defaults: { fontRegular: string; fontBold: string; outputRoot: string }): ResolvedPodProject {
+  if (!isAbsolute(spec)) invalid("--project must be an absolute project directory or config path");
+  const candidate = resolve(spec);
+  const root = existsSync(candidate) && statSync(candidate).isDirectory() ? candidate : resolve(candidate, "..");
+  const configPath = existsSync(candidate) && statSync(candidate).isDirectory() ? join(candidate, "pod.config.json") : candidate;
+  if (!existsSync(configPath) || !statSync(configPath).isFile()) invalid(`config file not found: ${configPath}`);
+  let raw: unknown;
+  try { raw = JSON.parse(readFileSync(configPath, "utf8")); } catch { invalid(`cannot parse ${configPath}`); }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) invalid("root must be an object");
+  const value = raw as Record<string, unknown>;
+  const entryValue = stringField(value.entry, "entry");
+  const appId = stringField(value.appId, "appId");
+  if (!APP_ID.test(appId)) invalid("appId must be a valid Android application id");
+  const versionName = stringField(value.versionName, "versionName");
+  if (!Number.isInteger(value.versionCode) || (value.versionCode as number) < 1) invalid("versionCode must be a positive integer");
+  const name = stringField(value.name, "name");
+  if (!Array.isArray(value.capabilities) || value.capabilities.some(cap => typeof cap !== "string")) invalid("capabilities must be an array of strings");
+  const capabilities = value.capabilities as string[];
+  const backgroundServices = value.backgroundServices ?? [];
+  if (!Array.isArray(backgroundServices) || backgroundServices.length > 4 ||
+      backgroundServices.some(method => !["kv.get", "kv.set", "kv.delete", "kv.keys"].includes(method)) ||
+      new Set(backgroundServices).size !== backgroundServices.length) invalid("backgroundServices must be unique supported KV methods");
+  const known = new Set<string>(Object.values(targets).flatMap(profile => [...profile.capabilities]));
+  const unknown = capabilities.filter(cap => !known.has(cap));
+  if (unknown.length) invalid(`unknown capability(s): ${unknown.join(", ")}`);
+  let resources: PodProjectResources | undefined;
+  if (value.resources !== undefined) {
+    if (!value.resources || typeof value.resources !== "object" || Array.isArray(value.resources)) invalid("resources must be an object");
+    const r = value.resources as Record<string, unknown>;
+    resources = {};
+    if (r.fontRegular !== undefined) resources.fontRegular = stringField(r.fontRegular, "resources.fontRegular");
+    if (r.fontBold !== undefined) resources.fontBold = stringField(r.fontBold, "resources.fontBold");
+    if (r.extraCharsFile !== undefined) resources.extraCharsFile = stringField(r.extraCharsFile, "resources.extraCharsFile");
+  }
+  const entry = resolve(root, entryValue);
+  if (!existsSync(entry) || !statSync(entry).isFile()) invalid(`entry file not found: ${entry}`);
+  const background: Record<string, string> = Object.create(null);
+  let backgroundConfig: Record<string, string> | undefined;
+  if (value.background !== undefined) {
+    if (!value.background || typeof value.background !== "object" || Array.isArray(value.background)) invalid("background must map handler ids to entry files");
+    if (Object.keys(value.background).length > 32) invalid("background handler limit is 32");
+    backgroundConfig = Object.create(null);
+    for (const [handler, path] of Object.entries(value.background)) {
+      if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(handler)) invalid("invalid background handler id");
+      const relative = stringField(path, `background.${handler}`);
+      const absolute = resolve(root, relative);
+      if (!existsSync(absolute) || !statSync(absolute).isFile()) invalid(`background entry file not found: ${absolute}`);
+      if (absolute === entry) invalid("background entry must be separate from UI entry");
+      background[handler] = absolute; backgroundConfig![handler] = relative;
+    }
+  }
+  const fontRegular = resolve(root, resources?.fontRegular ?? defaults.fontRegular);
+  const fontBold = resolve(root, resources?.fontBold ?? defaults.fontBold);
+  if (!existsSync(fontRegular) || !existsSync(fontBold)) invalid("configured font resource not found");
+  const extraChars = resources?.extraCharsFile === undefined ? "" : (() => {
+    const path = resolve(root, resources.extraCharsFile!);
+    if (!existsSync(path) || !statSync(path).isFile()) invalid(`extraCharsFile not found: ${path}`);
+    try { return readFileSync(path, "utf8"); } catch { invalid(`cannot read extraCharsFile: ${path}`); }
+  })();
+  return { config: { entry: entryValue, appId, versionName, versionCode: value.versionCode as number, name, capabilities, resources, background: backgroundConfig, backgroundServices }, root, configPath, entry, output: join(defaults.outputRoot, appId), fontRegular, fontBold, extraChars, background };
+}

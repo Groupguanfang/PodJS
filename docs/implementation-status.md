@@ -3,6 +3,63 @@
 This repository is an executable framework baseline, not a claim that all v1
 acceptance gates have passed.
 
+## Capability-plan audit — 2026-09-08
+
+The original requirements remain those in
+[the watch capability plan](plan-watch-platform-capabilities.md#summary).
+The following is a fresh source-level gap audit, not a four-device acceptance
+report. Earlier progress entries describe incremental components and must not be
+read as proving that a watch target exposes an end-to-end service.
+
+| Required boundary | Inspected current source/evidence | Unfinished work |
+| --- | --- | --- |
+| ABI, manifest and public API | `packages/framework/src/targets.ts` declares ABI 2/minimum ABI 1 and the seven capability names; default framework/background/accessibility tests and `cargo test --workspace` pass via `bun run test` | Verify the whole new capability set through each native host, not just exported method names |
+| Android/Wear watch synchronization | Shared runtime owns state/message/file channels. `PodServices.java` now accepts a host-approved `PodSyncServices` adapter; state get/set/delete map to durable entries and tombstones. An uninjected adapter or missing live operation reports unsupported; target profiles still do not advertise sync | Complete message/file/live synchronization operations, actual boot-time approved ownership, pairing/transport lifecycle and guest events; then verify watch/phone operation |
+| Harmony watch synchronization | The HAR and separate phone example implement pairing, BLE, state/message/file channels. Watch `entry/.../pages/Index.ets` composes background and notification handlers, not a sync handler; state re-exports alone do not create a service | Integrate the watch's app identity, pairing flow, authenticated link and service events; report actual independent links, including authenticated IP/link upgrade where supported |
+| Apple phone SDK and watch sync | No iOS companion SDK/example source was found in the current checkout. `PodWatchHost.swift` owns frame/render/accessibility but has no sync service effect pump or WatchConnectivity integration | Implement the iOS SDK/example and watch adapter, with independent-protocol availability reported honestly; native SDK compilation and end-to-end verification remain required |
+| Native optional transports and upgrades | Android RFCOMM/BLE/LAN and Harmony BLE/distributed/TLS components exist | Components are not evidence of Wear Data Layer preference/fallback, WatchConnectivity mappings or authenticated link switching with confirmed-progress preservation |
+| Local notifications and scheduled handlers | Android `PodServices` dispatches local notification/background methods. Harmony has native reminder/Work Scheduler handlers composed into the page | Complete and verify capability/preflight exposure for the actual device; Apple service implementation is still missing; system execution/cold-start events must be proven on devices |
+| Remote notifications | No native remote registration implementation was found by inspecting the platform registration entry points; public method declarations do not register a token | Native registration/unregistration, token update, real push arrival and payload/open/action tests for every required target |
+| Accessibility | Semantic/native bridge source and tests exist; the freshly rerun default suite includes semantic tests | Physical TalkBack/VoiceOver/Harmony reader interaction and complete primary actions remain unverified; do not infer acceptance from golden output |
+| Three phone examples | Android and Harmony examples exist; Harmony now has pairing, connection, state, message and file screens with method tests and a compiled unsigned HAP | iOS example is missing; verify real phone/watch offline edits, merges, message handling, file interruption/restart and recovery |
+| Four-device acceptance | `adb devices -l` currently lists one OWW242 Android watch. Device presence only proves connectivity | All four platform sync/notification/background/reader scenarios and the specified 10-minute stability/power observation remain open |
+
+Immediate implementation priority is the missing watch synchronization service
+integration and Apple SDK/host path, not further expansion of the Harmony phone
+example. Keep unsupported capabilities unadvertised until their host boundary is
+actually implemented. The current TypeScript target profiles still omit all
+three sync capabilities and remote notification capability; this is an honest
+guard, not completion of the requested features.
+
+Android integration preparation: the durable owner and bounded foreground driver
+now live in the runtime module as `PodSyncClient` and `PodSyncForeground`.
+`PodCompanion` and `PodForegroundSync` retain their phone-facing names as thin
+source-compatible facades, so the watch does not need a dependency on the phone
+SDK. This extraction does not itself dispatch guest sync services or enable a
+capability. Rebuild SDK consumers together: inherited nested session/listener
+types now belong to the runtime owner, so this is not a binary compatibility
+promise for previously compiled Java clients.
+
+The initial service adapter copies approved grants rather than accepting guest
+identity/capability arguments. Its state calls and routing were exercised through
+the real `PodServices` dispatcher on OWW242 (2 instrumentation tests, no failures).
+Cancellation before work, immutable grants, explicit JSON null, persisted
+tombstones and missing connection rejection were checked. The normal watch boot
+does not yet inject this adapter, and `LiveOperations` is an integration boundary,
+not a completed network implementation. Do not enable sync profiles on this basis.
+
+Message send now maps the public JSON/TTL/priority/caller-ID contract to the shared
+outbox using stable JSON encoding and atomic TTL retry intents. This permits
+offline enqueue without a network delegate; message ACK/event delivery, active
+connection wake-up and normal boot-time injection remain separate unfinished work.
+OWW242 outbox/service tests passed 9 cases, including ACK-then-restart retry and
+transaction failure. This does not replace two-device message delivery acceptance.
+
+Current local verification: `bun run test` passed, including 40 Rust tests;
+Harmony-specific suite separately passed 268 tests/4,277 assertions before this
+documentation-only audit. These results do not cover the missing host adapters
+or physical acceptance gates above.
+
 | Milestone | Current evidence | Remaining gate |
 | --- | --- | --- |
 | Feasibility / Android | OWW242 API 30 real device loads the signed bundle, starts QuickJS, emits a 6,464-word DrawList, incrementally rasterizes at density 2 and presents through Vulkan with text, gradients, rounded geometry and clipping intact | physical crown matrix and sustained frame/power gates |

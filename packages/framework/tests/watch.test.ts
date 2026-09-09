@@ -44,6 +44,23 @@ describe("watch API", () => {
     expect(seen).toEqual([-1250]);
   });
 
+  test("preserves positive normalized motion toward the next position", () => {
+    const seen: number[] = [];
+    const stop = api.onAxisDelta(api.RelativeAxis.Primary, delta => seen.push(delta));
+    events.push({ t: "axis", axis: 0, delta: 1250 });
+    api.__pumpPodEvents();
+    stop();
+    expect(seen).toEqual([1250]);
+  });
+
+  test("normalizes finite axis direction without inventing a sign for zero or nonfinite input", () => {
+    expect(api.normalizedRelativeAxisStep(1250)).toBe(1);
+    expect(api.normalizedRelativeAxisStep(-1250)).toBe(-1);
+    expect(api.normalizedRelativeAxisStep(0)).toBe(0);
+    expect(api.normalizedRelativeAxisStep(Number.NaN)).toBe(0);
+    expect(api.normalizedRelativeAxisStep(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
   test("keeps the host event pump across application frame-hook reset", () => {
     const seen: number[] = [];
     const stop = api.onAxisDelta(api.RelativeAxis.Primary, delta => seen.push(delta));
@@ -61,6 +78,14 @@ describe("watch API", () => {
     expect(api.kv.get<{ n: number }>("counter")).toEqual({ n: 3 });
     expect(api.kv.keys()).toEqual(["counter"]);
     expect(api.kv.delete("counter")).toBeTrue();
+  });
+
+  test("publishes navigation depth for native root-back handling", () => {
+    api.setNavigationState({ canGoBack: true });
+    expect(JSON.parse(effects.pop()!)).toEqual({ t: "navigation", canGoBack: true });
+    expect(api.navigationStateSnapshot()).toEqual({ canGoBack: true });
+    api.setNavigationState({ canGoBack: false });
+    expect(JSON.parse(effects.pop()!)).toEqual({ t: "navigation", canGoBack: false });
   });
 
   test("validates UTF-8 KV key length without browser encoding globals", () => {

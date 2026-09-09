@@ -1,6 +1,7 @@
 package dev.podjs.runtime;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.AssetManager;
 import android.graphics.SurfaceTexture;
@@ -8,6 +9,8 @@ import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.TextureView;
+import android.view.ViewGroup;
+import android.view.Window;
 import android.view.Choreographer;
 import android.util.Base64;
 import org.json.JSONObject;
@@ -27,6 +30,14 @@ import java.io.ByteArrayOutputStream;
 public final class PodRuntimeView extends TextureView implements TextureView.SurfaceTextureListener {
     static { System.loadLibrary("podjs_android"); }
     private long host;
+    private final PodAccessibility accessibility;
+    private boolean accessibilityEnabled;
+    private final long[] accessibilityMetadata = new long[3];
+    private final long viewBegan = android.os.SystemClock.elapsedRealtime();
+    private boolean firstTextureLogged;
+    private long surfaceBegan;
+    private boolean firstFrameLogged;
+    private final PodServices services;
     private final String targetId;
     private float rotaryRemainder;
     private boolean active = true;
@@ -35,13 +46,35 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override public void doFrame(long frameTime) {
             if (host != 0 && active) {
+                boolean enabled = accessibility.enabled();
+                if (enabled != accessibilityEnabled) {
+                    nativeAccessibilityEnabled(host, enabled); accessibilityEnabled = enabled;
+                    if (!enabled) accessibility.clear();
+                }
                 nativeFrame(host);
+                if (enabled) {
+                    byte[] semantics = nativeAccessibilitySnapshot(host, accessibilityMetadata);
+                    if (semantics != null) accessibility.update(semantics, accessibilityMetadata);
+                }
+                if (!firstFrameLogged) {
+                    firstFrameLogged = true;
+                    android.util.Log.i("PodJSPerf", "surfaceToFirstFrameMs=" + (android.os.SystemClock.elapsedRealtime() - surfaceBegan));
+                }
                 String effect;
                 while ((effect = nativePollEffect(host)) != null) {
-                    if (effect.contains("\"t\":\"haptic\"")) performHapticFeedback(6);
+                    try {
+                        JSONObject command = new JSONObject(effect);
+                        if ("haptic".equals(command.optString("t"))) performHapticFeedback(6);
+                        else if ("navigation".equals(command.optString("t"))) {
+                            nativeNavigationState(host, command.optBoolean("canGoBack", false));
+                        }
+                        else if (command.optString("t").startsWith("service.")) services.dispatch(command);
+                        else if ("notification.ack".equals(command.optString("t"))) services.acknowledgeNotification(command.getString("eventId"));
+                    } catch (Exception error) { android.util.Log.e("PodJS", "Invalid host effect", error); }
                 }
                 String command;
                 while ((command = nativePollNet(host)) != null) handleNetwork(command);
+                services.pumpNotifications();
             }
             if (active) Choreographer.getInstance().postFrameCallback(this);
         }
@@ -50,41 +83,53 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
     public PodRuntimeView(Context context, String targetId) {
         super(context);
         this.targetId = targetId;
+        accessibility = new PodAccessibility(this, (id, hash, action) -> host != 0 && nativeAccessibilityAction(host, id, hash, action));
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+        services = new PodServices(context, event -> post(() -> {
+            if (host != 0) nativePostEvent(host, event.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }));
         setSurfaceTextureListener(this);
-        setOpaque(true);
+        setOpaque(false);
         setFocusable(true);
     }
+    public void captureNotificationIntent(android.content.Intent intent) {services.captureNotificationIntent(intent);}
+    @Override public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider() { return accessibility; }
+    @Override public boolean dispatchHoverEvent(MotionEvent event) { return accessibility.hover(event) || super.dispatchHoverEvent(event); }
+    public void notificationPermissionResult(int requestCode,int[] results){services.notificationPermissionResult(requestCode,results);}
 
-    private static byte[] asset(AssetManager assets, String path) throws IOException {
-        try (InputStream stream = assets.open(path); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] chunk = new byte[16 * 1024];
-            int count;
-            while ((count = stream.read(chunk)) >= 0) output.write(chunk, 0, count);
-            return output.toByteArray();
-        }
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (getParent() instanceof ViewGroup) services.attachVideo((ViewGroup) getParent());
+    }
+    @Override protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility != VISIBLE) services.pauseVideoForLifecycle();
     }
 
     @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
-        if (host != 0) {
-            nativeResize(host, new Surface(texture), width, height);
-            nativeTheme(host, currentTheme());
-            return;
-        }
-        File data = new File(getContext().getFilesDir(), "podjs");
-        if (!data.exists() && !data.mkdirs()) throw new IllegalStateException("PodJS data directory");
-        host = nativeCreate(new Surface(texture), targetId, width, height,
-            getResources().getDisplayMetrics().density, data.getAbsolutePath());
+        Surface surface = new Surface(texture);
         try {
-            nativeBoot(host, asset(getContext().getAssets(), "main.pak"),
-                asset(getContext().getAssets(), "main.js"),
-                asset(getContext().getAssets(), "pod.manifest.json"));
+            if (host != 0) {
+                nativeResize(host, surface, width, height);
+                nativeTheme(host, currentTheme());
+                return;
+            }
+            surfaceBegan = android.os.SystemClock.elapsedRealtime();
+            firstFrameLogged = false;
+            File data = new File(getContext().getFilesDir(), "podjs");
+            if (!data.exists() && !data.mkdirs()) throw new IllegalStateException("PodJS data directory");
+            host = nativeCreate(surface, targetId, width, height,
+                getResources().getDisplayMetrics().density, data.getAbsolutePath());
+            accessibilityEnabled = false;
+            nativeBootAssets(host, getContext().getAssets());
+            services.approveInstalledBackground(targetId);
             nativeTheme(host, currentTheme());
             Choreographer.getInstance().removeFrameCallback(frameCallback);
-            Choreographer.getInstance().postFrameCallback(frameCallback);
-        } catch (IOException error) {
-            nativeDestroy(host); host = 0;
-            throw new IllegalStateException("Signed PodJS assets are missing", error);
-        }
+            if (active) Choreographer.getInstance().postFrameCallback(frameCallback);
+        } catch (RuntimeException error) {
+            if (host != 0) { nativeDestroy(host); host = 0; }
+            throw new IllegalStateException("PodJS boot failed", error);
+        } finally { surface.release(); }
     }
 
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
@@ -92,14 +137,24 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
         return true;
     }
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture t, int w, int h) {
-        if (host != 0) nativeResize(host, new Surface(t), w, h);
+        Surface surface = new Surface(t);
+        try { if (host != 0) nativeResize(host, surface, w, h); } finally { surface.release(); }
     }
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {
+        if (!firstTextureLogged) {
+            firstTextureLogged = true;
+            android.util.Log.i("PodJSPerf", "viewToFirstTextureMs=" + (android.os.SystemClock.elapsedRealtime() - viewBegan));
+        }
+    }
 
     @Override protected void onDetachedFromWindow() {
         Choreographer.getInstance().removeFrameCallback(frameCallback);
+        accessibility.clear();
         if (host != 0) { nativeDestroy(host); host = 0; }
+        for (HttpURLConnection connection : requests.values()) connection.disconnect();
+        requests.clear();
         network.shutdownNow();
+        services.close();
         super.onDetachedFromWindow();
     }
 
@@ -113,6 +168,9 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
 
     @Override public boolean onTouchEvent(MotionEvent event) {
         if (host == 0) return false;
+        if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+            nativePostEvent(host, "{\"t\":\"touchCancel\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
         int count = Math.min(event.getPointerCount(), 8);
         int[] ids = new int[count]; float[] xy = new float[count * 2];
         if (event.getActionMasked() != MotionEvent.ACTION_UP && event.getActionMasked() != MotionEvent.ACTION_CANCEL) {
@@ -129,6 +187,31 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
     private static final float DEGREES_PER_SCROLL_UNIT = 15f;
     private static final float ANDROID_MOUSE_WHEEL_SCALE = 1f / 48f;
 
+    /** OPPO/OPlus watches provide the native interactive rightward dismiss. */
+    public static boolean requestPlatformSwipeDismiss(android.app.Activity activity) {
+        if (!isOppoWatch(activity)) return false;
+        try {
+            return activity.requestWindowFeature(Window.FEATURE_SWIPE_TO_DISMISS);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    static boolean isOppoWatch(Context context) {
+        if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_WATCH)) return false;
+        return isOppoMarker(android.os.Build.MANUFACTURER)
+            || isOppoMarker(android.os.Build.BRAND)
+            || isOppoMarker(android.os.Build.PRODUCT)
+            || isOppoMarker(android.os.Build.DEVICE)
+            || isOppoMarker(android.os.Build.MODEL)
+            || isOppoMarker(android.os.Build.FINGERPRINT);
+    }
+
+    static boolean isOppoMarker(String value) {
+        return value != null && (value.toLowerCase(java.util.Locale.ROOT).contains("oppo")
+            || value.toLowerCase(java.util.Locale.ROOT).contains("oplus"));
+    }
+
     /** Translate physical crowns and simulated mouse wheels to the watch axis ABI. */
     static float scrollDegrees(MotionEvent event) {
         if (event.getAction() != MotionEvent.ACTION_SCROLL) return Float.NaN;
@@ -138,6 +221,8 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
         float scale = event.isFromSource(InputDevice.SOURCE_MOUSE)
             ? ANDROID_MOUSE_WHEEL_SCALE
             : 1f;
+        // PodJS RelativeAxis follows the browser/dev host contract: downward
+        // motion is positive. Android scroll axes are positive upward, so invert at the boundary.
         return -vertical * DEGREES_PER_SCROLL_UNIT * scale;
     }
 
@@ -213,7 +298,15 @@ public final class PodRuntimeView extends TextureView implements TextureView.Sur
         if (active) Choreographer.getInstance().postFrameCallback(frameCallback);
     }
     public boolean sendBack() { return host != 0 && nativeBack(host); }
+    public boolean canNavigateBack() { return host != 0 && nativeCanGoBack(host); }
 
+    private static native void nativePostEvent(long host, byte[] event);
+    private static native void nativeAccessibilityEnabled(long host, boolean enabled);
+    private static native byte[] nativeAccessibilitySnapshot(long host, long[] metadata);
+    private static native boolean nativeAccessibilityAction(long host, int id, long hash, int action);
+    private static native void nativeNavigationState(long host, boolean canGoBack);
+    private static native boolean nativeCanGoBack(long host);
+    private static native void nativeBootAssets(long host, AssetManager assets);
     private static native long nativeCreate(Surface surface, String target, int width, int height, float density, String dataDir);
     private static native void nativeBoot(long host, byte[] pak, byte[] js, byte[] manifest);
     private static native void nativeResize(long host, Surface surface, int width, int height);

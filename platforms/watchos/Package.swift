@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PodJSWatch",
+    defaultLocalization: "en",
     platforms: [.watchOS(.v11)],
     products: [.library(name: "PodJSWatch", targets: ["PodJSWatch"])],
     targets: [

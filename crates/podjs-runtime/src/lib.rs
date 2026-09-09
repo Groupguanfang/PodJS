@@ -5,6 +5,15 @@
 //! and exposes frame-boundary platform facts through a small append-only C ABI.
 
 use std::cell::RefCell;
+pub mod sync_files;
+pub mod sync_file_ffi;
+pub mod sync_auth;
+pub mod sync_session_ffi;
+pub mod background;
+pub mod background_ffi;
+pub mod kv;
+pub mod accessibility_ffi;
+use kv::KvStore;
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
@@ -21,7 +30,8 @@ use pocketjs_core::damage::{DEFAULT_DAMAGE_REGIONS, DamagePolicy, DamageTracker}
 use pocketjs_core::spec;
 use serde_json::{Value, json};
 
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
+pub const MIN_ABI_VERSION: u32 = 1;
 pub const DEFAULT_LOGICAL_WIDTH: u32 = 240;
 pub const DEFAULT_LOGICAL_HEIGHT: u32 = 240;
 const OK: i32 = 0;
@@ -126,44 +136,6 @@ struct PodBridge {
     metrics: String,
     capabilities: String,
 }
-
-struct KvStore {
-    values: BTreeMap<String, Value>,
-    path: Option<PathBuf>,
-    quota: usize,
-}
-
-impl KvStore {
-    fn open(data_dir: Option<&str>) -> Self {
-        let path = data_dir.map(|root| PathBuf::from(root).join("podjs-kv.json"));
-        let values = path
-            .as_ref()
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
-        Self {
-            values,
-            path,
-            quota: 4 * 1024 * 1024,
-        }
-    }
-
-    fn persist(&self) -> std::io::Result<()> {
-        let Some(path) = &self.path else {
-            return Ok(());
-        };
-        let bytes = serde_json::to_vec(&self.values)?;
-        if bytes.len() > self.quota {
-            return Err(std::io::Error::other("KV quota exceeded"));
-        }
-        let parent = path.parent().expect("KV path has parent");
-        std::fs::create_dir_all(parent)?;
-        let tmp = parent.join("podjs-kv.tmp");
-        std::fs::write(&tmp, bytes)?;
-        std::fs::rename(tmp, path)
-    }
-}
-
 #[derive(Default)]
 struct HostTransportInner {
     commands: VecDeque<String>,
@@ -217,6 +189,7 @@ pub struct PodRuntime {
     kv: Rc<RefCell<KvStore>>,
     target_id: String,
     host_abi: u32,
+    package_abi: u32,
     capabilities: Vec<String>,
     logical_width: u32,
     logical_height: u32,
@@ -229,6 +202,8 @@ pub struct PodRuntime {
     draw_words: Vec<u32>,
     draw_hash: u64,
     previous_draw_hash: u64,
+    accessibility_json: Vec<u8>,
+    accessibility_hash: Option<u64>,
     damage_tracker: DamageTracker<DEFAULT_DAMAGE_REGIONS>,
     frame_number: u64,
     poll_effect: CString,
@@ -282,10 +257,10 @@ fn mount_pod(
             "kvGet",
             Function::new(ctx.clone(), move |key: String| {
                 store
-                    .borrow()
-                    .values
+                    .borrow_mut()
                     .get(&key)
-                    .and_then(|v| serde_json::to_string(v).ok())
+                    .ok().flatten()
+                    .and_then(|v| serde_json::to_string(&v).ok())
             })?,
         )?;
 
@@ -299,17 +274,7 @@ fn mount_pod(
                 let Ok(value) = serde_json::from_str::<Value>(&value) else {
                     return 1;
                 };
-                let mut store = store.borrow_mut();
-                let old = store.values.insert(key.clone(), value);
-                if store.persist().is_err() {
-                    if let Some(old) = old {
-                        store.values.insert(key, old);
-                    } else {
-                        store.values.remove(&key);
-                    }
-                    return 1;
-                }
-                0
+                if store.borrow_mut().set(key,value).is_ok() {0} else {1}
             })?,
         )?;
 
@@ -317,15 +282,7 @@ fn mount_pod(
         ns.set(
             "kvDelete",
             Function::new(ctx.clone(), move |key: String| -> i32 {
-                let mut store = store.borrow_mut();
-                let Some(old) = store.values.remove(&key) else {
-                    return 1;
-                };
-                if store.persist().is_err() {
-                    store.values.insert(key, old);
-                    return 1;
-                }
-                0
+                if store.borrow_mut().delete(&key).unwrap_or(false) {0} else {1}
             })?,
         )?;
 
@@ -333,7 +290,7 @@ fn mount_pod(
         ns.set(
             "kvKeys",
             Function::new(ctx.clone(), move || {
-                serde_json::to_string(&store.borrow().values.keys().collect::<Vec<_>>())
+                serde_json::to_string(&store.borrow_mut().keys().unwrap_or_default())
                     .unwrap_or_else(|_| "[]".into())
             })?,
         )?;
@@ -388,7 +345,7 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
     }
     let config = unsafe { &*config };
     if config.struct_size as usize != std::mem::size_of::<PodRuntimeConfig>()
-        || config.host_abi != ABI_VERSION
+        || !(MIN_ABI_VERSION..=ABI_VERSION).contains(&config.host_abi)
         || config.raster_density == 0
         || config.physical_width == 0
         || config.physical_height == 0
@@ -429,6 +386,12 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
         config.raster_density,
     );
     surface.set_identity(target_id, config.host_abi);
+    // Android/Wear renderers negotiate the additive rounded-overflow
+    // DrawList command; other watch hosts retain legacy AABB scissors until
+    // their fixed-function decoders implement it.
+    if matches!(target_id, "android-watch" | "wearos-watch") {
+        surface.with_ui(|ui| ui.set_rounded_clip_supported(true));
+    }
     if !surface.set_tick_rate(60) {
         set_error("failed to pin the PocketJS clock to 60 Hz");
         return std::ptr::null_mut();
@@ -475,6 +438,7 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
         kv: Rc::new(RefCell::new(KvStore::open(data_dir))),
         target_id: target_id.to_owned(),
         host_abi: config.host_abi,
+        package_abi: config.host_abi,
         capabilities,
         logical_width,
         logical_height,
@@ -487,6 +451,8 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
         draw_words: Vec::new(),
         draw_hash: 0,
         previous_draw_hash: u64::MAX,
+        accessibility_json: Vec::new(),
+        accessibility_hash: None,
         damage_tracker: DamageTracker::new(),
         frame_number: 0,
         poll_effect: CString::default(),
@@ -497,12 +463,20 @@ pub extern "C" fn pod_runtime_create(config: *const PodRuntimeConfig) -> *mut Po
 
 #[unsafe(no_mangle)]
 pub extern "C" fn pod_runtime_logical_width(runtime: *const PodRuntime) -> u32 {
-    if runtime.is_null() { 0 } else { unsafe { (*runtime).logical_width } }
+    if runtime.is_null() {
+        0
+    } else {
+        unsafe { (*runtime).logical_width }
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn pod_runtime_logical_height(runtime: *const PodRuntime) -> u32 {
-    if runtime.is_null() { 0 } else { unsafe { (*runtime).logical_height } }
+    if runtime.is_null() {
+        0
+    } else {
+        unsafe { (*runtime).logical_height }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -535,6 +509,9 @@ pub extern "C" fn pod_runtime_validate_package(
         set_error("pak must load before package validation");
         return ERR_STATE;
     }
+    // A new validation attempt replaces the prior decision, including failures.
+    runtime.package_validated = false;
+    runtime.expected_bundle_hash = None;
     let Some(raw) = cstr(manifest_json) else {
         set_error("package manifest is required");
         return ERR_ARGUMENT;
@@ -550,7 +527,7 @@ pub extern "C" fn pod_runtime_validate_package(
     let manifest_capabilities = value
         .get("capabilities")
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(Value::as_str).collect::<Vec<_>>());
+        .and_then(|items| items.iter().map(Value::as_str).collect::<Option<Vec<_>>>());
     let capabilities_match = manifest_capabilities.is_some_and(|items| {
         items.len() == runtime.capabilities.len()
             && items
@@ -558,8 +535,9 @@ pub extern "C" fn pod_runtime_validate_package(
                 .zip(&runtime.capabilities)
                 .all(|(a, b)| *a == b)
     });
+    let package_abi = value.get("hostAbi").and_then(Value::as_u64);
     let valid = value.get("target").and_then(Value::as_str) == Some(runtime.target_id.as_str())
-        && value.get("hostAbi").and_then(Value::as_u64) == Some(runtime.host_abi as u64)
+        && package_abi.is_some_and(|abi| (MIN_ABI_VERSION as u64..=runtime.host_abi as u64).contains(&abi))
         && value.get("pocketjsRevision").and_then(Value::as_str) == Some(revision)
         && value.get("pakHash").and_then(Value::as_str) == Some(expected_pak.as_str())
         && manifest_bundle
@@ -570,6 +548,10 @@ pub extern "C" fn pod_runtime_validate_package(
         return ERR_STATE;
     }
     runtime.package_validated = true;
+    runtime.package_abi = package_abi.expect("validated package ABI") as u32;
+    // Legacy bundles may assert ui.__hostAbi exactly. Negotiate before mount,
+    // preserving the old guest contract without overstating host capabilities.
+    runtime.surface.set_identity(&runtime.target_id, runtime.package_abi);
     runtime.expected_bundle_hash = manifest_bundle.map(str::to_owned);
     OK
 }
@@ -632,6 +614,7 @@ pub extern "C" fn pod_runtime_eval_bundle(
         json!({
             "target": runtime.target_id,
             "hostAbi": runtime.host_abi,
+            "packageAbi": runtime.package_abi,
             "runtimeAbi": ABI_VERSION,
             "pocketjsRevision": revision,
             "pakHash": format!("{:016x}", runtime.pak_hash),
@@ -775,8 +758,7 @@ pub extern "C" fn pod_runtime_snapshot(runtime: *mut PodRuntime, out: *mut PodDr
     if !runtime.mounted || out.is_null() {
         return ERR_STATE;
     }
-    runtime.draw_words = runtime.surface.with_ui(|ui| ui.draw().words.clone());
-    let mut hash = hash_words(&runtime.draw_words);
+    let mut hash = runtime.surface.with_ui(|ui| hash_words(&ui.draw().words));
     runtime.surface.with_ui(|ui| {
         for slot in 0..ui.texture_slot_count() as u32 {
             if let Some((handle, revision, _)) = ui.texture_at_versioned(slot) {
@@ -784,6 +766,11 @@ pub extern "C" fn pod_runtime_snapshot(runtime: *mut PodRuntime, out: *mut PodDr
             }
         }
     });
+    if hash != runtime.draw_hash {
+        runtime
+            .surface
+            .with_ui(|ui| runtime.draw_words.clone_from(&ui.draw().words));
+    }
     runtime.previous_draw_hash = runtime.draw_hash;
     runtime.draw_hash = hash;
     unsafe {
@@ -894,6 +881,61 @@ pub extern "C" fn pod_runtime_render_rgba_incremental(
     OK
 }
 
+/// Incrementally render premultiplied RGBA8 for an alpha-composited native
+/// surface. This is opt-in; existing hosts retain opaque-black raster output.
+#[unsafe(no_mangle)]
+pub extern "C" fn pod_runtime_render_rgba_transparent_incremental(
+    runtime: *mut PodRuntime,
+    scale: u32,
+    pixels: *mut u8,
+    length: usize,
+) -> i32 {
+    let Ok(runtime) = runtime_mut(runtime) else {
+        return ERR_ARGUMENT;
+    };
+    if !runtime.mounted || pixels.is_null() || !(1..=4).contains(&scale) {
+        return ERR_ARGUMENT;
+    }
+    let Some(width) = runtime.logical_width.checked_mul(scale) else {
+        return ERR_ARGUMENT;
+    };
+    let Some(height) = runtime.logical_height.checked_mul(scale) else {
+        return ERR_ARGUMENT;
+    };
+    let Some(expected) = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|value| value.checked_mul(4))
+    else {
+        return ERR_ARGUMENT;
+    };
+    if length != expected {
+        return ERR_ARGUMENT;
+    }
+    let framebuffer = unsafe { slice::from_raw_parts_mut(pixels, length) };
+    let result = runtime.surface.with_ui(|ui| {
+        pocketjs_core::raster::render_scaled_transparent_incremental(
+            ui,
+            &runtime.draw_words,
+            framebuffer,
+            scale,
+            &mut runtime.damage_tracker,
+            DamagePolicy::default(),
+        )
+    });
+    if result.is_err() {
+        runtime.surface.with_ui(|ui| {
+            pocketjs_core::raster::render_scaled_transparent(
+                ui,
+                &runtime.draw_words,
+                framebuffer,
+                scale,
+            )
+        });
+        runtime.damage_tracker.invalidate();
+    }
+    OK
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn pod_runtime_texture(
     runtime: *mut PodRuntime,
@@ -925,6 +967,47 @@ pub extern "C" fn pod_runtime_texture(
                 linear: i32::from(view.linear),
             }
         };
+        OK
+    })
+}
+
+/// Resolve a generation-tagged texture handle directly. Unlike the legacy
+/// slot sweep, this rejects freed handles and slot reuse with a stale
+/// generation instead of enumerating a slot.
+#[unsafe(no_mangle)]
+pub extern "C" fn pod_runtime_texture_for_handle(
+    runtime: *mut PodRuntime,
+    handle: i32,
+    out: *mut PodTextureView,
+) -> i32 {
+    let Ok(runtime) = runtime_mut(runtime) else {
+        return ERR_ARGUMENT;
+    };
+    if out.is_null() {
+        return ERR_ARGUMENT;
+    }
+    runtime.surface.with_ui(|ui| {
+        let Some(view) = ui.texture(handle) else {
+            return IDLE;
+        };
+        let Some(revision) = ui.texture_revision(handle) else {
+            return IDLE;
+        };
+        let palette = view.palette.unwrap_or(&[]);
+        unsafe {
+            *out = PodTextureView {
+                handle,
+                revision,
+                pixels: view.pixels.as_ptr(),
+                byte_length: view.pixels.len(),
+                width: view.w,
+                height: view.h,
+                pixel_format: view.psm,
+                palette: palette.as_ptr(),
+                palette_length: palette.len(),
+                linear: i32::from(view.linear),
+            };
+        }
         OK
     })
 }
@@ -1094,6 +1177,146 @@ mod tests {
         value
     }
 
+    #[test]
+    fn texture_handle_api_resolves_live_and_rejects_stale_handles() {
+        let target = CString::new("android-watch").unwrap();
+        let caps = CString::new("[]").unwrap();
+        let runtime = pod_runtime_create(&valid_config(&target, &caps));
+        assert!(!runtime.is_null());
+        let handle = unsafe {
+            (&mut *runtime)
+                .surface
+                .with_ui(|ui| ui.upload_texture(&[1, 2, 3, 4], 1, 1, 0))
+        };
+        let mut view = PodTextureView {
+            handle: 0,
+            revision: 0,
+            pixels: std::ptr::null(),
+            byte_length: 0,
+            width: 0,
+            height: 0,
+            pixel_format: 0,
+            palette: std::ptr::null(),
+            palette_length: 0,
+            linear: 0,
+        };
+        assert_eq!(
+            pod_runtime_texture_for_handle(runtime, handle, &mut view),
+            OK
+        );
+        assert_eq!(view.handle, handle);
+        assert!(view.byte_length > 0);
+        unsafe {
+            (&mut *runtime)
+                .surface
+                .with_ui(|ui| ui.free_texture(handle));
+        }
+        assert_eq!(
+            pod_runtime_texture_for_handle(runtime, handle, &mut view),
+            IDLE
+        );
+        pod_runtime_destroy(runtime);
+    }
+
+    #[test]
+    fn accessibility_actions_queue_only_valid_live_snapshot_targets() {
+        use crate::accessibility_ffi::*;
+        let target = CString::new("android-watch").unwrap();
+        let caps = CString::new("[]").unwrap();
+        let runtime = pod_runtime_create(&valid_config(&target, &caps));
+        assert_eq!(pod_runtime_accessibility_action(runtime, 1, 0, 1), ERR_STATE);
+        let source = format!("globalThis.n=ui.createNode(0);ui.setProp(n,{},80);ui.setProp(n,{},20);ui.setAccessibility(n,'Go',1,null,null,512,0);ui.insertBefore(1,n,0);globalThis.frame=()=>{{}};", spec::prop::WIDTH, spec::prop::HEIGHT);
+        validate(runtime, "android-watch", b"pak", source.as_bytes(), &[]);
+        assert_eq!(pod_runtime_eval_bundle(runtime, source.as_ptr(), source.len(), std::ptr::null()), OK);
+        assert_eq!(pod_runtime_set_accessibility_enabled(runtime, 1), OK);
+        let mut draw = PodDrawList { words: std::ptr::null(), word_count: 0, content_hash: 0, frame_number: 0, changed: 0 };
+        assert_eq!(pod_runtime_snapshot(runtime, &mut draw), OK);
+        let (id, hash) = unsafe { &mut *runtime }.surface.with_ui(|ui| {
+            let snapshot = ui.current_accessibility();
+            (snapshot.nodes[0].id, snapshot.content_hash)
+        });
+        let mut tree = PodAccessibilityTree { node_count: 0, content_hash: 0, frame_number: 0 };
+        assert_eq!(pod_runtime_accessibility_tree(runtime, &mut tree), OK);
+        assert_eq!(tree.node_count, 1); assert_eq!(tree.content_hash, hash);
+        assert_eq!(pod_runtime_accessibility_tree(runtime, std::ptr::null_mut()), ERR_ARGUMENT);
+        let mut node = std::mem::MaybeUninit::<PodAccessibilityNode>::uninit();
+        assert_eq!(pod_runtime_accessibility_node(runtime, 0, node.as_mut_ptr()), OK);
+        let mut node = unsafe { node.assume_init() };
+        assert_eq!((node.id, node.parent_id, node.role, node.actions), (id, 0, 1, 1));
+        assert_eq!((node.left, node.top, node.right, node.bottom), (0, 0, 80, 20));
+        assert_eq!(unsafe { slice::from_raw_parts(node.label.bytes, node.label.byte_length) }, b"Go");
+        assert!(node.value.bytes.is_null()); assert!(node.hint.bytes.is_null());
+        assert_eq!(pod_runtime_accessibility_node(runtime, 1, &mut node), ERR_ARGUMENT);
+        assert_eq!(node.id, id); // Failed reads do not overwrite a caller's output.
+        assert_eq!(pod_runtime_accessibility_action(runtime, id, hash, 1), OK);
+        let event = unsafe { &mut *runtime }.bridge.borrow_mut().events.pop_back().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&event).unwrap(), json!({"t":"accessibility.action","nodeId":id,"action":"activate"}));
+        assert_eq!(pod_runtime_accessibility_action(runtime, id, hash ^ 1, 1), ERR_STATE);
+        assert_eq!(pod_runtime_accessibility_action(runtime, id, hash, 2), ERR_STATE);
+        assert_eq!(pod_runtime_accessibility_action(runtime, id, hash, 3), ERR_ARGUMENT);
+        unsafe { &mut *runtime }.surface.with_ui(|ui| {
+            let mut props = ui.accessibility_of(id).unwrap().clone();
+            props.value = Some(String::new()); props.label = Some("New😀".into());
+            ui.set_accessibility(id, props);
+        });
+        assert_eq!(pod_runtime_accessibility_node(runtime, 0, &mut node), OK);
+        assert!(node.value.bytes.is_null()); // Uncommitted metadata is still hidden.
+        assert_eq!(pod_runtime_snapshot(runtime, &mut draw), OK);
+        assert_eq!(pod_runtime_accessibility_node(runtime, 0, &mut node), OK);
+        assert!(!node.value.bytes.is_null()); assert_eq!(node.value.byte_length, 0);
+        assert_eq!(unsafe { slice::from_raw_parts(node.label.bytes, node.label.byte_length) }, "New😀".as_bytes());
+        let mut json_view = PodAccessibilitySnapshot { json: std::ptr::null(), byte_length: 0, content_hash: 0, frame_number: 0, changed: 0 };
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime, &mut json_view), OK);
+        assert_eq!(json_view.changed, 1); // Typed reads did not consume JSON's cursor.
+        assert_eq!(pod_runtime_accessibility_tree(runtime, &mut tree), OK);
+        assert_eq!(tree.content_hash, json_view.content_hash);
+        unsafe { &mut *runtime }.surface.with_ui(|ui| { ui.destroy_node(id); });
+        assert_eq!(pod_runtime_accessibility_action(runtime, id, hash, 1), ERR_STATE);
+        pod_runtime_destroy(runtime);
+    }
+
+    #[test]
+    fn accessibility_abi_reads_only_committed_content_and_suppresses_unchanged_exports() {
+        use crate::accessibility_ffi::*;
+        let target=CString::new("android-watch").unwrap();let caps=CString::new("[]").unwrap();
+        let runtime=pod_runtime_create(&valid_config(&target,&caps));assert!(!runtime.is_null());
+        let mut semantics=PodAccessibilitySnapshot{json:std::ptr::null(),byte_length:0,content_hash:0,frame_number:0,changed:0};
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),ERR_STATE);
+        assert_eq!(pod_runtime_set_accessibility_enabled(runtime,2),ERR_ARGUMENT);
+        assert_eq!(pod_runtime_set_accessibility_enabled(runtime,1),OK);
+        let source=format!("globalThis.n=ui.createNode(1);ui.setText(n,'Read😀');ui.setProp(n,{},80);ui.setProp(n,{},20);ui.insertBefore(1,n,0);globalThis.frame=()=>ui.setText(n,'Changed');",spec::prop::WIDTH,spec::prop::HEIGHT);
+        validate(runtime,"android-watch",b"pak",source.as_bytes(),&[]);
+        assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),OK);
+        let mut draw=PodDrawList{words:std::ptr::null(),word_count:0,content_hash:0,frame_number:0,changed:0};
+        assert_eq!(pod_runtime_snapshot(runtime,&mut draw),OK);
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.changed,1);
+        let read=|view:&PodAccessibilitySnapshot|->Value {serde_json::from_slice(unsafe{slice::from_raw_parts(view.json,view.byte_length)}).unwrap()};
+        let first=read(&semantics);assert_eq!(first["schema"],1);assert_eq!(first["nodes"][0]["role"],"text");assert_eq!(first["nodes"][0]["label"],"Read😀");
+        assert_eq!(first["nodes"][0]["bounds"],json!({"left":0,"top":0,"right":80,"bottom":20}));
+        let hash=semantics.content_hash;let pointer=semantics.json;let committed_frame=semantics.frame_number;
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.changed,0);assert_eq!(semantics.json,pointer);
+        assert_eq!(pod_runtime_frame(runtime,std::ptr::null()),OK);
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.content_hash,hash);assert_eq!(read(&semantics),first);assert_eq!(semantics.frame_number,committed_frame);
+        assert_eq!(pod_runtime_snapshot(runtime,&mut draw),OK);
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.changed,1);assert_ne!(semantics.content_hash,hash);
+        assert_eq!(read(&semantics)["nodes"][0]["label"],"Changed");
+        assert!(semantics.frame_number>committed_frame);
+        let second_frame=semantics.frame_number;
+        assert_eq!(pod_runtime_frame(runtime,std::ptr::null()),OK);
+        assert_eq!(pod_runtime_snapshot(runtime,&mut draw),OK);
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.changed,0);assert!(semantics.frame_number>second_frame);
+        // A host can clear its projection while disabled without querying the
+        // empty snapshot; re-enable must still republish identical content.
+        assert_eq!(pod_runtime_set_accessibility_enabled(runtime,0),OK);
+        assert_eq!(pod_runtime_set_accessibility_enabled(runtime,1),OK);
+        assert_eq!(pod_runtime_snapshot(runtime,&mut draw),OK);
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.changed,1);
+        assert_eq!(read(&semantics)["nodes"][0]["label"],"Changed");
+        assert_eq!(pod_runtime_set_accessibility_enabled(runtime,0),OK);
+        assert_eq!(pod_runtime_accessibility_snapshot(runtime,&mut semantics),OK);assert_eq!(semantics.changed,1);assert_eq!(read(&semantics)["nodes"],json!([]));
+        pod_runtime_destroy(runtime);
+    }
+
     fn validate(runtime: *mut PodRuntime, target: &str, pak: &[u8], bundle: &[u8], caps: &[&str]) {
         assert_eq!(pod_runtime_load_pak(runtime, pak.as_ptr(), pak.len()), OK);
         let manifest = CString::new(
@@ -1122,6 +1345,39 @@ mod tests {
     }
 
     #[test]
+    fn abi_two_hosts_boot_legacy_and_current_guests_without_bypassing_validation() {
+        for target_name in ["android-watch", "wearos-watch", "watchos-watch", "harmonyos-watch"] {
+            for (host_abi, package_abi, accepted) in [(2,1,true),(2,2,true),(1,1,true),(1,2,false),(2,0,false),(2,3,false)] {
+                let target = CString::new(target_name).unwrap(); let caps = CString::new("[]").unwrap();
+                let mut config = valid_config(&target,&caps); config.host_abi = host_abi;
+                let runtime = pod_runtime_create(&config); assert!(!runtime.is_null());
+                let source = format!("if (ui.__hostAbi !== {package_abi}) throw new Error('wrong negotiated ABI'); globalThis.frame = function() {{}};");
+                let pak = b"pak";
+                assert_eq!(pod_runtime_load_pak(runtime,pak.as_ptr(),pak.len()),OK);
+                let mut manifest = json!({"target":target_name,"hostAbi":package_abi,
+                    "pocketjsRevision":option_env!("PODJS_POCKETJS_REVISION").unwrap_or("0a90bf904d835210e52a11ed275a86d0040b5086"),
+                    "pakHash":format!("{:016x}",hash_bytes(pak)),"bundleHash":format!("{:016x}",hash_bytes(source.as_bytes())),"capabilities":[]});
+                // ABI compatibility must not allow unsupported capability declarations.
+                manifest["capabilities"] = json!(["companion.sync.message"]);
+                let invalid = CString::new(manifest.to_string()).unwrap();
+                assert_eq!(pod_runtime_validate_package(runtime,invalid.as_ptr()),ERR_STATE);
+                manifest["capabilities"] = json!([]);
+                let encoded = CString::new(manifest.to_string()).unwrap();
+                assert_eq!(pod_runtime_validate_package(runtime,encoded.as_ptr()),if accepted {OK} else {ERR_STATE});
+                if accepted {
+                    assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),OK);
+                    let receipt: Value = serde_json::from_str(cstr(pod_runtime_receipt(runtime)).unwrap()).unwrap();
+                    assert_eq!(receipt["hostAbi"],host_abi); assert_eq!(receipt["packageAbi"],package_abi);
+                    assert_eq!(receipt["runtimeAbi"],2);
+                } else {
+                    assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),ERR_STATE);
+                }
+                pod_runtime_destroy(runtime);
+            }
+        }
+    }
+
+    #[test]
     fn rejects_package_mismatch_before_javascript() {
         let target = CString::new("android-watch").unwrap();
         let caps = CString::new("[]").unwrap();
@@ -1145,6 +1401,36 @@ mod tests {
             pod_runtime_eval_bundle(runtime, b"js".as_ptr(), 2, std::ptr::null()),
             ERR_STATE
         );
+        pod_runtime_destroy(runtime);
+    }
+
+    #[test]
+    fn malformed_capabilities_and_failed_revalidation_revoke_boot_permission() {
+        let target = CString::new("android-watch").unwrap();
+        let caps = CString::new("[]").unwrap();
+        let runtime = pod_runtime_create(&valid_config(&target,&caps));
+        let source = b"globalThis.frame = function() {}";
+        let valid = json!({"target":"android-watch","hostAbi":1,
+            "pocketjsRevision":option_env!("PODJS_POCKETJS_REVISION").unwrap_or("0a90bf904d835210e52a11ed275a86d0040b5086"),
+            "pakHash":format!("{:016x}",hash_bytes(b"pak")),"bundleHash":format!("{:016x}",hash_bytes(source)),"capabilities":[]});
+        assert_eq!(pod_runtime_load_pak(runtime,b"pak".as_ptr(),3),OK);
+        let manifest = CString::new(valid.to_string()).unwrap();
+        for invalid_capabilities in [json!([null]),json!([17]),json!([{}]),json!([true]),json!("input.touch")] {
+            assert_eq!(pod_runtime_validate_package(runtime,manifest.as_ptr()),OK);
+            let mut invalid = valid.clone(); invalid["capabilities"] = invalid_capabilities;
+            let invalid = CString::new(invalid.to_string()).unwrap();
+            assert_eq!(pod_runtime_validate_package(runtime,invalid.as_ptr()),ERR_STATE);
+            assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),ERR_STATE);
+        }
+        assert_eq!(pod_runtime_validate_package(runtime,manifest.as_ptr()),OK);
+        assert_eq!(pod_runtime_validate_package(runtime,std::ptr::null()),ERR_ARGUMENT);
+        assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),ERR_STATE);
+        assert_eq!(pod_runtime_validate_package(runtime,manifest.as_ptr()),OK);
+        let malformed = CString::new("{").unwrap();
+        assert_eq!(pod_runtime_validate_package(runtime,malformed.as_ptr()),ERR_ARGUMENT);
+        assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),ERR_STATE);
+        assert_eq!(pod_runtime_validate_package(runtime,manifest.as_ptr()),OK);
+        assert_eq!(pod_runtime_eval_bundle(runtime,source.as_ptr(),source.len(),std::ptr::null()),OK);
         pod_runtime_destroy(runtime);
     }
 
@@ -1205,8 +1491,11 @@ mod tests {
         };
         assert_eq!(pod_runtime_snapshot(runtime, &mut snapshot), 0);
         assert_eq!(snapshot.frame_number, 1);
-        let mut rgba = vec![0u8; (pod_runtime_logical_width(runtime)
-            * pod_runtime_logical_height(runtime) * 4) as usize];
+        let mut rgba = vec![
+            0u8;
+            (pod_runtime_logical_width(runtime) * pod_runtime_logical_height(runtime) * 4)
+                as usize
+        ];
         let mut incremental = vec![0u8; rgba.len()];
         assert_eq!(
             pod_runtime_render_rgba_incremental(
@@ -1223,6 +1512,21 @@ mod tests {
         );
         assert_eq!(incremental, rgba);
         assert!(rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        let mut transparent = vec![0xff; rgba.len()];
+        assert_eq!(
+            pod_runtime_render_rgba_transparent_incremental(
+                runtime,
+                1,
+                transparent.as_mut_ptr(),
+                transparent.len(),
+            ),
+            OK
+        );
+        assert!(
+            transparent
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 0, 0, 0])
+        );
         assert_eq!(
             pod_runtime_render_rgba(runtime, 0, rgba.as_mut_ptr(), rgba.len()),
             ERR_ARGUMENT

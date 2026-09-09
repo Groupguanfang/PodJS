@@ -8,9 +8,11 @@ inside the PocketJS QuickJS guest and targets four native watch shells:
 - `watchos-watch` — watchOS 11+, WatchKit/SpriteKit
 - `harmonyos-watch` — HarmonyOS 6.1 smart wearable, ArkUI/XComponent/GLES3
 
-The application viewport is always 240×240 logical pixels. Hosts report the
-physical display, shape and safe insets through `@podjs/framework`; application
-code branches on capabilities, never target names.
+The checked-in target profiles and gallery use 240×240 as their portable design
+baseline. At runtime each native host derives its logical render surface from
+the physical display and raster density, then reports the resulting dimensions,
+shape and safe insets through `@podjs/framework`. Application code adapts from
+those metrics and capabilities, never target names.
 
 The production runtime evaluates only the JS and pak embedded in the signed
 application package. Debug deployment may replace those assets over ADB or HDC.
@@ -52,8 +54,11 @@ an unsigned HAP.
 - Android/Wear AAR/JNI with dual ARM ABIs, API 30-compatible asset loading,
   lifecycle/surface recovery, haptics/network bridge and Vulkan 1.1 swapchain.
 - watchOS Swift Package/SpriteKit host validated with a linked Rust/QuickJS
-  XCFramework on an Apple Watch simulator, plus a HarmonyOS
-  Stage/XComponent/N-API/GLES3 source tree validated by its native build host.
+  XCFramework on an Apple Watch simulator and with signed startup plus a static
+  rendered frame on a physical Series 9. Touch and Digital Crown bridging and
+  UI tests are present; physical interaction remains a separate acceptance gate.
+- HarmonyOS Stage/XComponent/N-API/GLES3 source tree validated by its native
+  build host.
 - A 1,000-row Solid component/performance gallery and contract tests.
 
 The Android renderer incrementally rasterizes the canonical DrawList at density

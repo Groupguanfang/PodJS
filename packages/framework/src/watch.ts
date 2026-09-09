@@ -1,3 +1,5 @@
+import { cancelActiveTouches } from "@pocketjs/framework/gesture";
+import { dispatchAccessibilityAction } from "@pocketjs/framework/input";
 import { registerServicePump } from "@pocketjs/framework/services";
 import type { PodCapabilityId } from "./targets.ts";
 
@@ -7,6 +9,8 @@ export type RelativeAxisId = (typeof RelativeAxis)[keyof typeof RelativeAxis];
 export type LifecycleState = "active" | "inactive" | "background";
 export type SystemTheme = "light" | "dark";
 export type HapticKind = "click" | "success" | "warning" | "error";
+export type NavigationState = Readonly<{ canGoBack: boolean }>;
+export type RelativeAxisStep = -1 | 0 | 1;
 
 export interface DisplayMetrics {
   readonly logicalWidth: number;
@@ -38,6 +42,12 @@ const axisHandlers = new Map<RelativeAxisId, Set<AxisHandler>>();
 const lifecycleHandlers = new Set<LifecycleHandler>();
 const themeHandlers = new Set<ThemeHandler>();
 const backHandlers: BackHandler[] = [];
+let navigationState: NavigationState = Object.freeze({ canGoBack: false });
+const hostEventHandlers = new Set<(event: Record<string, unknown>) => void>();
+/** Internal shared event fanout; services must not drain the host queue themselves. */
+export function __onHostEvent(handler: (event: Record<string, unknown>) => void): () => void {
+  return subscribe(hostEventHandlers, handler);
+}
 let lifecycleState: LifecycleState = "active";
 let themeState: SystemTheme = "dark";
 
@@ -51,6 +61,11 @@ function subscribe<T>(set: Set<T>, handler: T): () => void {
   return () => set.delete(handler);
 }
 
+/**
+ * Subscribe to normalized relative motion. Positive deltas move toward the
+ * next/increasing position; hosts normalize their native axis orientation
+ * before emitting this ABI value.
+ */
 export function onAxisDelta(axis: RelativeAxisId, handler: AxisHandler): () => void {
   if (axis !== RelativeAxis.Primary && axis !== RelativeAxis.Secondary) {
     throw new Error(`PodJS: unknown relative axis ${axis}`);
@@ -59,6 +74,12 @@ export function onAxisDelta(axis: RelativeAxisId, handler: AxisHandler): () => v
   if (!handlers) axisHandlers.set(axis, handlers = new Set());
   handlers.add(handler);
   return () => handlers?.delete(handler);
+}
+
+/** Reduce normalized relative motion to a finite direction step. */
+export function normalizedRelativeAxisStep(delta: number): RelativeAxisStep {
+  if (!Number.isFinite(delta) || delta === 0) return 0;
+  return delta > 0 ? 1 : -1;
 }
 
 export function getDisplayMetrics(): DisplayMetrics {
@@ -100,6 +121,17 @@ export function onSystemBack(handler: BackHandler): () => void {
     if (index >= 0) backHandlers.splice(index, 1);
   };
 }
+
+/** Publish the current app depth so native hosts can leave the app at root. */
+export function setNavigationState(state: NavigationState): void {
+  if (typeof state?.canGoBack !== "boolean") {
+    throw new Error("PodJS: navigation state requires boolean canGoBack");
+  }
+  navigationState = Object.freeze({ canGoBack: state.canGoBack });
+  host()?.emit(JSON.stringify({ t: "navigation", canGoBack: state.canGoBack }));
+}
+
+export function navigationStateSnapshot(): NavigationState { return navigationState; }
 
 export const haptics = Object.freeze({
   perform(kind: HapticKind): void {
@@ -151,14 +183,20 @@ type PodEvent =
   | { t: "axis"; axis: RelativeAxisId; delta: number }
   | { t: "lifecycle"; state: LifecycleState }
   | { t: "theme"; theme: SystemTheme }
-  | { t: "back" };
+  | { t: "back" }
+  | { t: "touchCancel" }
+  | { t: "accessibility.action"; nodeId: number; action: string };
 
 export function __pumpPodEvents(): void {
   const batch = host()?.takeEvents();
   if (!batch) return;
   const events = JSON.parse(batch) as PodEvent[];
   for (const event of events) {
-    if (event.t === "axis" && Number.isInteger(event.delta) && event.delta !== 0) {
+    if (event.t === "touchCancel" || (event.t === "lifecycle" && event.state !== "active")) cancelActiveTouches();
+    for (const handler of hostEventHandlers) handler(event as unknown as Record<string, unknown>);
+    if (event.t === "accessibility.action") {
+      dispatchAccessibilityAction(event.nodeId, event.action);
+    } else if (event.t === "axis" && Number.isInteger(event.delta) && event.delta !== 0) {
       for (const handler of axisHandlers.get(event.axis) ?? []) handler(event.delta);
     } else if (event.t === "lifecycle") {
       lifecycleState = event.state;
